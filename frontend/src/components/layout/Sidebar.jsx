@@ -8,6 +8,7 @@ const nav = [
   ['/degen', 'Degen'],
   ['/predictions', 'Predictions'],
   ['/analytics', 'Analytics'],
+  ['/backtesting', 'Backtesting'],
   ['/journal', 'Journal'],
   ['/settings', 'Settings'],
   ['/subscription', 'Subscription'],

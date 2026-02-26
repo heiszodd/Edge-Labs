@@ -14,6 +14,7 @@ import Predictions from './pages/Predictions';
 import Subscription from './pages/Subscription';
 import Analytics from './pages/Analytics';
 import Journal from './pages/Journal';
+import Backtesting from './pages/Backtesting';
 import useAuth from './hooks/useAuth';
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="degen" element={<Degen />} />
             <Route path="predictions" element={<Predictions />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="backtesting" element={<Backtesting />} />
             <Route path="journal" element={<Journal />} />
             <Route path="settings" element={<Settings />} />
             <Route path="subscription" element={<Subscription />} />
