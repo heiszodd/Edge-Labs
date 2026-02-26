@@ -20,8 +20,8 @@ export default function Register() {
         return;
       }
       navigate('/');
-    } catch {
-      setError('Could not create account');
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Could not create account');
     }
   };
 

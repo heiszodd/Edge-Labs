@@ -124,6 +124,21 @@ def register(body: RegisterBody) -> dict:
     except HTTPException:
         raise
     except Exception as exc:
+        msg = str(exc).lower()
+        if "already registered" in msg or "already exists" in msg or "user already" in msg:
+            try:
+                login_res = db._client.auth.sign_in_with_password({"email": body.email, "password": body.password})
+                user_obj = getattr(login_res, "user", None)
+                session_obj = getattr(login_res, "session", None)
+                user_id = getattr(user_obj, "id", None)
+                token = getattr(session_obj, "access_token", None)
+                if user_id and token:
+                    user = _ensure_user_row(user_id, str(body.email), body.username)
+                    if user:
+                        return _auth_payload_for_user(user, token)
+            except Exception:
+                pass
+            raise HTTPException(status_code=400, detail="Email already registered. Try sign in.")
         raise HTTPException(status_code=400, detail=f"Registration failed: {exc}")
 
 

@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend import db
+from backend import config, db
 from backend.api.admin import router as admin_router
 from backend.api.alerts import router as alerts_router
 from backend.api.analytics import router as analytics_router
@@ -46,6 +46,77 @@ def startup_event():
         start_scheduler()
     except Exception:
         logger.exception('Scheduler failed to start')
+    try:
+        bootstrap_admin()
+    except Exception:
+        logger.exception("Admin bootstrap failed")
+
+
+def bootstrap_admin():
+    email = config.ADMIN_BOOTSTRAP_EMAIL
+    password = config.ADMIN_BOOTSTRAP_PASSWORD
+    username = config.ADMIN_BOOTSTRAP_USERNAME or "admin"
+    if not email or not password:
+        return
+    if not db._client:
+        logger.warning("Admin bootstrap skipped: Supabase client unavailable")
+        return
+
+    existing = db.get_user_by_email(email)
+    if existing:
+        db.update_user(
+            existing.get("id"),
+            {
+                "role": "admin",
+                "is_admin": True,
+                "subscription_tier": "premium",
+                "subscription_status": "active",
+            },
+        )
+        logger.info("Admin bootstrap ensured existing user: %s", email)
+        return
+
+    user_id = None
+    try:
+        admin_api = getattr(getattr(db._client, "auth", None), "admin", None)
+        if admin_api and hasattr(admin_api, "create_user"):
+            created = admin_api.create_user(
+                {
+                    "email": email,
+                    "password": password,
+                    "email_confirm": True,
+                    "user_metadata": {"username": username},
+                }
+            )
+            created_user = getattr(created, "user", None) or getattr(created, "data", None)
+            user_id = getattr(created_user, "id", None) or (created_user.get("id") if isinstance(created_user, dict) else None)
+        if not user_id:
+            signed = db._client.auth.sign_up({"email": email, "password": password})
+            signed_user = getattr(signed, "user", None)
+            user_id = getattr(signed_user, "id", None)
+    except Exception:
+        logger.exception("Failed creating admin auth user")
+        return
+
+    if not user_id:
+        logger.warning("Admin bootstrap could not resolve user id for %s", email)
+        return
+
+    db._upsert(
+        "users",
+        {
+            "id": user_id,
+            "email": email,
+            "username": username,
+            "role": "admin",
+            "is_admin": True,
+            "subscription_tier": "premium",
+            "subscription_status": "active",
+        },
+        on_conflict="id",
+    )
+    db.create_user_defaults(user_id)
+    logger.info("Admin bootstrap user created: %s", email)
 
 
 @app.get('/health')
