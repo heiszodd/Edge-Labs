@@ -1,4 +1,7 @@
-app = "edge-lab"  # <-- replace with your unique app name
+app = "edge-lab"
+kill_signal = "SIGINT"
+kill_timeout = 5
+processes = []
 
 [build]
-  builder = "heroku/buildpacks:20"
+  image = "dockerfile"
