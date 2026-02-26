@@ -21,7 +21,7 @@ export default function Register() {
       }
       navigate('/');
     } catch (err) {
-      setError(err?.response?.data?.detail || 'Could not create account');
+      setError(err?.response?.data?.detail || err?.message || 'Could not create account');
     }
   };
 

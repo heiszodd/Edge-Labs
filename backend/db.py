@@ -156,6 +156,14 @@ def get_users(limit: int = 200) -> list[dict]:
     return _select_many("users", order="created_at", desc=True, limit=limit)
 
 
+def has_admin_user() -> bool:
+    rows = _select_many("users", limit=1, is_admin=True)
+    if rows:
+        return True
+    rows = _select_many("users", limit=1, role="admin")
+    return bool(rows)
+
+
 def update_user(user_id, fields: dict):
     _update("users", fields, id=user_id)
 

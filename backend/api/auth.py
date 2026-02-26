@@ -48,7 +48,11 @@ def _ensure_user_row(user_id: str, email: str, username: str | None = None) -> d
         if username and not existing.get("username"):
             updates["username"] = username
         db.update_user(user_id, updates)
-        return db.get_user_by_id(user_id) or existing
+        row = db.get_user_by_id(user_id) or existing
+        if config.AUTO_PROMOTE_FIRST_USER_ADMIN and row and not db.has_admin_user():
+            db.update_user(user_id, {"role": "admin", "is_admin": True, "subscription_tier": "premium", "subscription_status": "active"})
+            row = db.get_user_by_id(user_id) or row
+        return row
 
     chosen_username = (username or "").strip() or _safe_username(email_clean, user_id.replace("-", ""))
     created = db._insert(
@@ -80,7 +84,11 @@ def _ensure_user_row(user_id: str, email: str, username: str | None = None) -> d
             on_conflict="id",
         )
     db.create_user_defaults(user_id)
-    return created or db.get_user_by_id(user_id)
+    row = created or db.get_user_by_id(user_id)
+    if config.AUTO_PROMOTE_FIRST_USER_ADMIN and row and not db.has_admin_user():
+        db.update_user(user_id, {"role": "admin", "is_admin": True, "subscription_tier": "premium", "subscription_status": "active"})
+        row = db.get_user_by_id(user_id) or row
+    return row
 
 
 def _auth_payload_for_user(user: dict, token: str) -> dict:

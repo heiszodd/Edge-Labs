@@ -28,6 +28,7 @@ SERVICE_SECRET = os.getenv("SERVICE_SECRET", "")
 ADMIN_BOOTSTRAP_EMAIL = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
 ADMIN_BOOTSTRAP_PASSWORD = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
 ADMIN_BOOTSTRAP_USERNAME = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "admin")
+AUTO_PROMOTE_FIRST_USER_ADMIN = os.getenv("AUTO_PROMOTE_FIRST_USER_ADMIN", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 if not TELEGRAM_BOT_TOKEN:
     logging.warning("TELEGRAM_BOT_TOKEN not set; Telegram integration will be disabled.")
