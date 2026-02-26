@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend import db
 from backend.config import FRONTEND_URL
+from backend.api.auth import router as auth_router
 
 logger = logging.getLogger(__name__)
 
@@ -33,3 +34,6 @@ def startup_event():
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+app.include_router(auth_router)

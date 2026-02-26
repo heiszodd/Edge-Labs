@@ -15,6 +15,8 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://api.mainnet-beta.solana.com")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+SERVICE_SECRET = os.getenv("SERVICE_SECRET", "")
 
 if not TELEGRAM_BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
