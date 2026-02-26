@@ -4,4 +4,5 @@ kill_timeout = 5
 processes = []
 
 [build]
-  image = "dockerfile"
+  # Use Dockerfile in the repo root
+  dockerfile = "./Dockerfile"
