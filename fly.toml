@@ -1,0 +1,4 @@
+app = "edge-lab"  # <-- replace with your unique app name
+
+[build]
+  builder = "heroku/buildpacks:20"
