@@ -19,6 +19,8 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").strip().rstrip
 FRONTEND_URLS = [u.strip().rstrip("/") for u in os.getenv("FRONTEND_URLS", "").split(",") if u.strip()]
 if FRONTEND_URL and FRONTEND_URL not in FRONTEND_URLS:
     FRONTEND_URLS.append(FRONTEND_URL)
+CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
+ALLOW_ALL_CORS = os.getenv("ALLOW_ALL_CORS", "false").strip().lower() in {"1", "true", "yes", "on"}
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://api.mainnet-beta.solana.com")

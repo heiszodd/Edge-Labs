@@ -1,8 +1,15 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
+const normalizeBaseUrl = (value) => {
+  const raw = (value || '').trim();
+  if (!raw) return 'http://localhost:8000';
+  if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, '');
+  return `https://${raw.replace(/\/+$/, '')}`;
+};
+
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+  baseURL: normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL),
 });
 
 apiClient.interceptors.request.use((config) => {

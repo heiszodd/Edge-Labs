@@ -19,7 +19,7 @@ from backend.api.predictions import router as predictions_router
 from backend.api.signals import router as signals_router
 from backend.api.users import router as users_router
 from backend.api.wallets import router as wallets_router
-from backend.config import FRONTEND_URLS
+from backend.config import ALLOW_ALL_CORS, CORS_ORIGIN_REGEX, FRONTEND_URLS
 from backend.jobs.scheduler import start_scheduler
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,8 @@ app = FastAPI(title='Trading Intelligence Platform API')
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=FRONTEND_URLS or ["http://localhost:5173"],
+    allow_origins=["*"] if ALLOW_ALL_CORS else (FRONTEND_URLS or ["http://localhost:5173"]),
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
