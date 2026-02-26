@@ -18,14 +18,17 @@ export const useAuthStore = create((set, get) => ({
     const { data } = await apiClient.post('/api/auth/login', { email, password });
     const user = data.user || { email };
     const token = data.access_token || data.token;
-    const tier = (data.tier || user.tier || 'free').toLowerCase();
+    const tier = (data.tier || user.tier || user.subscription_tier || 'free').toLowerCase();
     const payload = { user, token, tier };
     localStorage.setItem('edge-auth', JSON.stringify(payload));
     set({ ...payload, isAuthenticated: Boolean(token) });
     return data;
   },
   register: async (email, username, password) => {
-    await apiClient.post('/api/auth/register', { email, username, password });
+    const { data } = await apiClient.post('/api/auth/register', { email, username, password });
+    if (data?.requires_email_verification) {
+      return data;
+    }
     return get().login(email, password);
   },
   logout: () => {

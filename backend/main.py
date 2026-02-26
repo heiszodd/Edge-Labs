@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend import db
+from backend.api.admin import router as admin_router
 from backend.api.alerts import router as alerts_router
 from backend.api.analytics import router as analytics_router
 from backend.api.auth import router as auth_router
@@ -18,7 +19,7 @@ from backend.api.predictions import router as predictions_router
 from backend.api.signals import router as signals_router
 from backend.api.users import router as users_router
 from backend.api.wallets import router as wallets_router
-from backend.config import FRONTEND_URL
+from backend.config import FRONTEND_URLS
 from backend.jobs.scheduler import start_scheduler
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ app = FastAPI(title='Trading Intelligence Platform API')
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],
+    allow_origins=FRONTEND_URLS or ["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
@@ -53,6 +54,7 @@ def health() -> dict:
 
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(perps_router)
 app.include_router(degen_router)
 app.include_router(predictions_router)

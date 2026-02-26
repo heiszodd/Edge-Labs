@@ -40,3 +40,11 @@ def require_tier(min_tier: str):
 
 def require_live_trading():
     return require_tier("pro")
+
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    role = str(user.get("role", "user")).lower()
+    is_admin = bool(user.get("is_admin", False))
+    if not (is_admin or role == "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user

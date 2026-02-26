@@ -148,8 +148,24 @@ def get_user_by_link_token(token) -> dict:
     return _select_one("users", telegram_link_token=token)
 
 
+def get_user_by_email(email) -> dict:
+    return _select_one("users", email=str(email).strip().lower())
+
+
+def get_users(limit: int = 200) -> list[dict]:
+    return _select_many("users", order="created_at", desc=True, limit=limit)
+
+
 def update_user(user_id, fields: dict):
     _update("users", fields, id=user_id)
+
+
+def set_user_role(user_id, role: str, is_admin: bool):
+    _update("users", {"role": role, "is_admin": bool(is_admin)}, id=user_id)
+
+
+def set_user_subscription(user_id, tier: str, status: str = "active"):
+    _update("users", {"subscription_tier": tier, "subscription_status": status}, id=user_id)
 
 
 def create_user_defaults(user_id):
@@ -288,6 +304,20 @@ def get_user_settings(user_id) -> dict:
 
 def update_user_settings(user_id, data: dict):
     _upsert("user_settings", {**data, "user_id": user_id}, on_conflict="user_id")
+
+
+# Subscription tiers
+
+def get_subscription_tiers() -> list[dict]:
+    return _select_many("subscription_tiers", order="id", desc=False)
+
+
+def upsert_subscription_tier(data: dict):
+    _upsert("subscription_tiers", data, on_conflict="name")
+
+
+def delete_subscription_tier(name: str):
+    _delete("subscription_tiers", name=name)
 
 
 # HL
