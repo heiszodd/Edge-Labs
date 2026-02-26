@@ -5,7 +5,9 @@ const normalizeBaseUrl = (value) => {
   const raw = (value || '').trim();
   if (!raw) return 'http://localhost:8000';
   if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, '');
-  return `https://${raw.replace(/\/+$/, '')}`;
+  const host = raw.replace(/\/+$/, '');
+  const isLocalHost = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0)(:\d+)?$/i.test(host);
+  return `${isLocalHost ? 'http' : 'https'}://${host}`;
 };
 
 const apiClient = axios.create({
