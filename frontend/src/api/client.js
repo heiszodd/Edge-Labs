@@ -10,8 +10,10 @@ const normalizeBaseUrl = (value) => {
   return `${isLocalHost ? 'http' : 'https'}://${host}`;
 };
 
+const API = normalizeBaseUrl(import.meta.env.VITE_API_URL);
+
 const apiClient = axios.create({
-  baseURL: normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL),
+  baseURL: API,
 });
 
 apiClient.interceptors.request.use((config) => {
@@ -19,12 +21,21 @@ apiClient.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (import.meta.env.DEV) {
+    const method = (config.method || 'get').toUpperCase();
+    const path = config.url || '';
+    console.debug(`[API] ${method} ${API}${path}`);
+  }
   return config;
 });
 
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    const status = error?.response?.status;
+    const method = (error?.config?.method || 'get').toUpperCase();
+    const path = error?.config?.url || '';
+    console.error(`[API ERROR] ${method} ${API}${path} -> ${status || 'NETWORK_ERROR'}`, error?.response?.data || error?.message);
     if (error?.response?.status === 401) {
       useAuthStore.getState().logout();
     }

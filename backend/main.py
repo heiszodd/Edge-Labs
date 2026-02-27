@@ -26,9 +26,16 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title='Trading Intelligence Platform API')
 
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://edgelabs-five.vercel.app",
+    "http://localhost:5173",
+]
+
+allowed_origins = list(dict.fromkeys((FRONTEND_URLS or []) + DEFAULT_ALLOWED_ORIGINS))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if ALLOW_ALL_CORS else (FRONTEND_URLS or ["http://localhost:5173"]),
+    allow_origins=["*"] if ALLOW_ALL_CORS else allowed_origins,
     allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=['*'],
@@ -122,6 +129,11 @@ def bootstrap_admin():
 
 @app.get('/health')
 def health() -> dict:
+    return {'status': 'ok'}
+
+
+@app.get('/api/health')
+def api_health() -> dict:
     return {'status': 'ok'}
 
 
