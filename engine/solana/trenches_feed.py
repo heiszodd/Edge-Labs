@@ -5,7 +5,7 @@ from engine.degen.contract_scanner import scan_contract
 
 
 async def run_degen_scanner_for_user(user_id) -> list:
-    models = [m for m in db.get_user_models(user_id, active_only=True) if m.get("section") == "degen"]
+    models = db.get_degen_models(user_id, active_only=True)
     if not models:
         return []
     # Placeholder token universe.

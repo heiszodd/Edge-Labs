@@ -3,13 +3,14 @@ import { useAuthStore } from '../../store/authStore';
 import ThemeToggle from '../common/ThemeToggle';
 
 const NAV = [
-  { href: '/', icon: '🏠', label: 'Overview' },
-  { href: '/perps', icon: '📈', label: 'Perps' },
-  { href: '/degen', icon: '🔥', label: 'Degen' },
-  { href: '/predictions', icon: '🎯', label: 'Predictions' },
-  { href: '/backtesting', icon: '🔬', label: 'Backtest' },
-  { href: '/analytics', icon: '📊', label: 'Analytics' },
-  { href: '/settings', icon: '⚙️', label: 'Settings' },
+  { href: '/', icon: 'O', label: 'Overview' },
+  { href: '/perps', icon: 'P', label: 'Perps' },
+  { href: '/degen', icon: 'D', label: 'Degen' },
+  { href: '/predictions', icon: 'R', label: 'Predictions' },
+  { href: '/backtesting', icon: 'B', label: 'Backtest' },
+  { href: '/analytics', icon: 'A', label: 'Analytics' },
+  { href: '/profile', icon: 'U', label: 'Profile' },
+  { href: '/settings', icon: 'S', label: 'Settings' },
 ];
 
 export default function Sidebar({ collapsed, onToggle }) {
@@ -28,7 +29,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       <div className={`flex items-center mb-4 px-2 ${collapsed ? 'justify-center' : 'justify-between'}`}>
         {!collapsed && <span className="font-semibold text-sm text-[var(--text-primary)]">TradeIntel</span>}
         <button onClick={onToggle} className="btn-ghost p-1.5 rounded-xl text-xs">
-          {collapsed ? '→' : '←'}
+          {collapsed ? '>' : '<'}
         </button>
       </div>
 
@@ -66,4 +67,3 @@ export default function Sidebar({ collapsed, onToggle }) {
     </div>
   );
 }
-

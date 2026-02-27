@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import httpx
-
 from backend import db
+from backend.services.external_api import request_json
 
 
-async def run_market_scanner() -> list:
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as c:
-            r = await c.get("https://gamma-api.polymarket.com/markets")
-            r.raise_for_status()
-            markets = r.json() or []
-    except Exception:
-        markets = []
+async def run_market_scanner(limit: int = 100, offset: int = 0, category: str | None = None) -> list:
+    params = {"limit": int(limit), "offset": int(offset)}
+    if category and category.lower() != "all":
+        params["category"] = category
+    data, _ = await request_json("GET", "https://gamma-api.polymarket.com/markets", params=params, timeout=12.0)
+    markets = data or []
     scored = [{"market": m, "score": _score_market(m)} for m in markets]
     scored.sort(key=lambda x: x["score"], reverse=True)
     return scored
@@ -29,8 +26,8 @@ def _score_market(m) -> float:
 
 
 async def run_scanner_for_user(user_id) -> None:
-    markets = await run_market_scanner()
-    models = [m for m in db.get_user_models(user_id, active_only=True) if m.get("section") == "predictions"]
+    markets = await run_market_scanner(limit=200, offset=0)
+    models = db.get_prediction_models(user_id, active_only=True)
     for model in models:
         min_score = float(model.get("min_score", 70))
         for entry in markets[:100]:

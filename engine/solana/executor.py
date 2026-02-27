@@ -4,7 +4,7 @@ from backend import db
 
 
 def _get_keypair(user_id: str):
-    key = db.get_encrypted_key(user_id, "sol_private_key")
+    key = db.get_encrypted_key(user_id, "sol_private_key") or db.get_encrypted_key(user_id, "sol_pk")
     return {"ready": bool(key)}
 
 

@@ -9,8 +9,8 @@ async def run_hl_monitor_for_user(user_id, context) -> None:
     address = db.get_hl_address(user_id)
     if not address:
         return
-    positions = await fetch_positions_with_prices(address)
-    fills = await fetch_trade_history(address, limit=50)
+    positions, _ = await fetch_positions_with_prices(address)
+    fills, _ = await fetch_trade_history(address, limit=50)
     existing = {str(x.get("hash") or x.get("tid")) for x in db.get_hl_trade_history(user_id, limit=200)}
     for fill in fills:
         key = str(fill.get("hash") or fill.get("tid"))

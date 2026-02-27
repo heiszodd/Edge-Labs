@@ -16,6 +16,7 @@ import Subscription from './pages/Subscription';
 import Analytics from './pages/Analytics';
 import Journal from './pages/Journal';
 import Backtesting from './pages/Backtesting';
+import Profile from './pages/Profile';
 import useAuth from './hooks/useAuth';
 import { useAuthStore } from './store/authStore';
 
@@ -53,6 +54,7 @@ function AppRoutes() {
         <Route path="backtesting" element={<Backtesting />} />
         <Route path="journal" element={<Journal />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="profile" element={<Profile />} />
         <Route path="subscription" element={<Subscription />} />
       </Route>
     </Routes>

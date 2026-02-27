@@ -55,7 +55,7 @@ function RuleCard({ rule, index }) {
 
 export default function Backtesting() {
   const [models, setModels] = useState([]);
-  const [form, setForm] = useState({ model_id: '', pair: 'BTCUSDT', timeframe: '1h', start_date: '', end_date: '', capital: 10000 });
+  const [form, setForm] = useState({ model_id: '', pair: 'BTCUSDT', timeframe: '1h', start_date: '', end_date: '', capital: 10000, slippage_bps: 0, commission_pct: 0 });
   const [showBuilder, setShowBuilder] = useState(false);
   const [zones, setZones] = useState(initialZones);
   const [qualityScore, setQualityScore] = useState(70);
@@ -89,7 +89,13 @@ export default function Backtesting() {
     setLoading(true);
     setResult(null);
     try {
-      const payload = { ...form, model_id: Number(form.model_id), capital: Number(form.capital) };
+      const payload = {
+        ...form,
+        model_id: Number(form.model_id),
+        capital: Number(form.capital),
+        slippage_bps: Number(form.slippage_bps),
+        commission_pct: Number(form.commission_pct),
+      };
       const run = await runBacktestApi(payload);
       const nextRunId = run?.run_id;
       setRunId(nextRunId);
@@ -142,6 +148,8 @@ export default function Backtesting() {
                 <input type="date" className="input" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
               </div>
               <input className="input" type="number" min="100" value={form.capital} onChange={(e) => setForm((p) => ({ ...p, capital: e.target.value }))} />
+              <input className="input" type="number" min="0" value={form.slippage_bps} onChange={(e) => setForm((p) => ({ ...p, slippage_bps: e.target.value }))} placeholder="Slippage bps" />
+              <input className="input" type="number" min="0" step="0.01" value={form.commission_pct} onChange={(e) => setForm((p) => ({ ...p, commission_pct: e.target.value }))} placeholder="Commission %" />
               <button className="btn bg-violet-500 hover:bg-violet-600" onClick={runBacktest}>Run Backtest</button>
             </div>
 

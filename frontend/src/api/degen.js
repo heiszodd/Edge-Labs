@@ -1,14 +1,23 @@
 import client, { unwrap } from './client';
 
+export const getWalletBalance = () => client.get('/api/degen/balance').then(unwrap);
 export const scanContract = (address) => client.post('/api/degen/scan-contract', { address }).then(unwrap);
-export const buyLive = (token_address, size_usd) => client.post('/api/degen/buy', { token_address, size_usd }).then(unwrap);
-export const buyDemo = (token_address, size_usd) => client.post('/api/degen/demo-buy', { token_address, size_usd }).then(unwrap);
+export const buyLive = (token_address, size_usd, slippage_bps = 100, confirm = true) => client.post('/api/degen/buy', { token_address, size_usd, slippage_bps, confirm }).then(unwrap);
+export const buyDemo = (token_address, size_usd, slippage_bps = 100) => client.post('/api/degen/demo-buy', { token_address, size_usd, slippage_bps }).then(unwrap);
 export const getModels = () => client.get('/api/degen/models').then(unwrap);
 export const toggleModel = (id, active) => client.post(`/api/degen/models/${id}/toggle`, { active }).then(unwrap);
 export const addWatchlist = (address, note = '') => client.post('/api/degen/watchlist', { address, note }).then(unwrap);
+export const removeWatchlist = (id) => client.delete(`/api/degen/watchlist/${id}`).then(unwrap);
+export const getWatchlist = () => client.get('/api/degen/watchlist').then(unwrap);
 export const addBlacklist = (address, note = '') => client.post('/api/degen/blacklist', { address, note }).then(unwrap);
 export const getDemo = () => client.get('/api/degen/demo').then(unwrap);
+export const getDemoHistory = () => client.get('/api/degen/demo/history').then(unwrap);
 export const depositDemo = (amount) => client.post('/api/degen/demo/deposit', { amount }).then(unwrap);
+export const withdrawDemo = (amount) => client.post('/api/degen/demo/withdraw', { amount }).then(unwrap);
 export const resetDemo = () => client.post('/api/degen/demo/reset').then(unwrap);
+export const clearDemoLogs = () => client.post('/api/degen/demo/clear-logs').then(unwrap);
 export const runScanner = () => client.post('/api/degen/scanner/run').then(unwrap);
-
+export const getScannerResults = () => client.get('/api/degen/scanner/results').then(unwrap);
+export const getTrackedWallets = () => client.get('/api/degen/tracked-wallets').then(unwrap);
+export const addTrackedWallet = (payload) => client.post('/api/degen/tracked-wallets', payload).then(unwrap);
+export const exportTrackedWallets = () => client.get('/api/degen/tracked-wallets/export').then((r) => r.data);

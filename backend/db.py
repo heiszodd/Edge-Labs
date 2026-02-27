@@ -362,16 +362,75 @@ def save_hl_address(user_id, address):
 
 
 def upsert_hl_positions(user_id, positions: list):
+    allowed = {
+        "coin",
+        "side",
+        "size",
+        "entry_price",
+        "mark_price",
+        "live_upnl",
+        "live_upnl_pct",
+        "leverage",
+        "liquidation_price",
+        "trailing_stop_pct",
+        "trailing_stop_order_id",
+        "updated_at",
+    }
     for position in positions:
-        _upsert("hl_positions", {**position, "user_id": user_id})
+        clean = {k: v for k, v in (position or {}).items() if k in allowed}
+        _upsert("hl_positions", {**clean, "user_id": user_id})
 
 
 def get_hl_positions(user_id) -> list:
     return _select_many("hl_positions", user_id=user_id, order="updated_at", desc=True)
 
 
+def upsert_hl_orders(user_id, orders: list):
+    allowed = {
+        "coin",
+        "side",
+        "order_type",
+        "price",
+        "size",
+        "size_usd",
+        "order_id",
+        "status",
+        "leverage",
+        "stop_loss",
+        "tp1",
+        "fill_price",
+        "fill_time",
+        "created_at",
+    }
+    for order in orders or []:
+        key = str(order.get("order_id") or order.get("oid") or "")
+        payload = {**{k: v for k, v in (order or {}).items() if k in allowed}, "user_id": user_id}
+        if key:
+            payload["order_id"] = key
+            _upsert("hl_orders", payload, on_conflict="user_id,order_id")
+        else:
+            _insert("hl_orders", payload)
+
+
+def get_hl_orders(user_id, limit=100) -> list:
+    return _select_many("hl_orders", user_id=user_id, order="created_at", desc=True, limit=limit)
+
+
 def save_hl_trade(user_id, data):
-    _insert("hl_trade_history", {**data, "user_id": user_id})
+    allowed = {
+        "coin",
+        "side",
+        "size",
+        "size_usd",
+        "entry_price",
+        "exit_price",
+        "closed_pnl",
+        "leverage",
+        "timestamp",
+        "signal_id",
+    }
+    payload = {k: v for k, v in (data or {}).items() if k in allowed}
+    _insert("hl_trade_history", {**payload, "user_id": user_id})
 
 
 def get_hl_trade_history(user_id, limit=50) -> list:
@@ -457,6 +516,22 @@ def is_blacklisted(user_id, address) -> bool:
     return bool(_select_one("blacklist", user_id=user_id, address=address))
 
 
+def get_solana_watchlist(user_id) -> list:
+    return _select_many("solana_watchlist", user_id=user_id, order="added_at", desc=True)
+
+
+def save_solana_watchlist(user_id, token_address, note=""):
+    _upsert(
+        "solana_watchlist",
+        {"user_id": user_id, "token_address": token_address, "notes": note or ""},
+        on_conflict="user_id,token_address",
+    )
+
+
+def delete_solana_watchlist(user_id, item_id):
+    _delete("solana_watchlist", user_id=user_id, id=item_id)
+
+
 # Polymarket
 
 def get_poly_address(user_id) -> str:
@@ -509,7 +584,12 @@ def log_audit(user_id, action, details, success=True, error=None):
 # Backtest
 
 def create_backtest_run(user_id, data) -> int:
-    row = _insert("backtest_runs", {**data, "user_id": user_id})
+    payload = {**(data or {}), "user_id": user_id}
+    if "capital" in payload and "initial_capital" not in payload:
+        payload["initial_capital"] = payload.pop("capital")
+    if "result" in payload and "results_data" not in payload:
+        payload["results_data"] = payload.pop("result")
+    row = _insert("backtest_runs", payload)
     return int(row.get("id", 0) or 0)
 
 
@@ -518,7 +598,10 @@ def update_backtest_run(run_id, data):
 
 
 def get_backtest_run(run_id, user_id) -> dict:
-    return _select_one("backtest_runs", id=run_id, user_id=user_id)
+    row = _select_one("backtest_runs", id=run_id, user_id=user_id)
+    if row and "result" not in row and isinstance(row.get("results_data"), dict):
+        row["result"] = row.get("results_data")
+    return row
 
 
 def get_backtest_history(user_id) -> list:
@@ -526,7 +609,18 @@ def get_backtest_history(user_id) -> list:
 
 
 def save_backtest_trade(data):
-    _insert("backtest_trades", data)
+    payload = dict(data or {})
+    if "entry" in payload and "entry_price" not in payload:
+        payload["entry_price"] = payload.pop("entry")
+    if "exit" in payload and "exit_price" not in payload:
+        payload["exit_price"] = payload.pop("exit")
+    if "pnl_percent" in payload and "pnl_pct" not in payload:
+        payload["pnl_pct"] = payload.pop("pnl_percent")
+    _insert("backtest_trades", payload)
+
+
+def clear_demo_trades(user_id, section):
+    _delete("demo_trades", user_id=user_id, section=section)
 
 
 # Journal

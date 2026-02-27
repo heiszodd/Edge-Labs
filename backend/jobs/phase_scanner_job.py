@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from backend import db
+from engine.phase_engine import run_phase_scanner_for_user as run_engine_phase_scanner_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def _should_run_free(user_id: str) -> bool:
 
 async def run_phase_scanner_for_user(user_id: str, bot_context=None):
     db._insert('job_runs', {'user_id': user_id, 'job': 'phase_scanner', 'ran_at': datetime.now(timezone.utc).isoformat()})
+    await run_engine_phase_scanner_for_user(user_id, bot_context)
 
 
 def _expire_old_signals():

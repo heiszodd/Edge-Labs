@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import CandlestickChart from '../components/charts/CandlestickChart';
 import ModelCard from '../components/models/ModelCard';
@@ -6,15 +6,25 @@ import AdvancedModelBuilder from '../components/models/AdvancedModelBuilder';
 import SignalCard from '../components/signals/SignalCard';
 import TierGuard from '../components/common/TierGuard';
 import {
+  clearDemoLogs,
   createModel,
   depositDemo,
+  getAccount,
   getDemoBalance,
+  getDemoHistory,
+  getDepositAddress,
+  getHealth,
+  getHistory,
   getModels,
+  getOrders,
   getPending,
+  getPositions,
   getRisk,
+  requestWithdraw,
   resetDemo,
   runScanner,
   updateRisk,
+  withdrawDemo,
 } from '../api/perps';
 import { executeDemo, executeLive } from '../api/signals';
 
@@ -23,8 +33,9 @@ const tabs = ['Overview', 'Scanner', 'Models', 'Pending', 'Demo', 'Risk'];
 export default function Perps() {
   const [tab, setTab] = useState('Overview');
   const [builderOpen, setBuilderOpen] = useState(false);
-  const [newModel, setNewModel] = useState({ name: '', pair: 'BTCUSDT', timeframe: '1h' });
   const [demoAmount, setDemoAmount] = useState(500);
+  const [withdrawAmount, setWithdrawAmount] = useState(100);
+  const [withdrawAddress, setWithdrawAddress] = useState('');
   const [riskForm, setRiskForm] = useState({
     max_risk_pct: 1,
     daily_loss_limit: 200,
@@ -34,10 +45,17 @@ export default function Perps() {
   });
   const qc = useQueryClient();
 
+  const accountQ = useQuery({ queryKey: ['perps', 'account'], queryFn: () => getAccount(7), refetchInterval: 7000 });
+  const healthQ = useQuery({ queryKey: ['perps', 'health'], queryFn: getHealth, refetchInterval: 7000 });
+  const positionsQ = useQuery({ queryKey: ['perps', 'positions'], queryFn: () => getPositions(true), refetchInterval: 10000 });
+  const ordersQ = useQuery({ queryKey: ['perps', 'orders'], queryFn: () => getOrders(true), refetchInterval: 10000 });
+  const historyQ = useQuery({ queryKey: ['perps', 'history'], queryFn: () => getHistory(100, true), staleTime: 10_000 });
   const modelsQ = useQuery({ queryKey: ['perps', 'models'], queryFn: getModels, staleTime: 30_000 });
   const pendingQ = useQuery({ queryKey: ['perps', 'pending'], queryFn: getPending, staleTime: 30_000, refetchOnWindowFocus: true });
   const demoQ = useQuery({ queryKey: ['perps', 'demo'], queryFn: getDemoBalance, staleTime: 30_000 });
+  const demoHistoryQ = useQuery({ queryKey: ['perps', 'demo-history'], queryFn: getDemoHistory, staleTime: 30_000 });
   const riskQ = useQuery({ queryKey: ['perps', 'risk'], queryFn: getRisk, staleTime: 30_000 });
+  const depositAddressQ = useQuery({ queryKey: ['perps', 'deposit'], queryFn: getDepositAddress, staleTime: 60_000 });
 
   useEffect(() => {
     if (riskQ.data) setRiskForm((prev) => ({ ...prev, ...riskQ.data }));
@@ -49,23 +67,29 @@ export default function Perps() {
   });
   const createModelM = useMutation({
     mutationFn: createModel,
-    onSuccess: () => {
-      setNewModel({ name: '', pair: 'BTCUSDT', timeframe: '1h' });
-      qc.invalidateQueries({ queryKey: ['perps', 'models'] });
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'models'] }),
   });
   const depositM = useMutation({
     mutationFn: depositDemo,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'demo'] }),
+  });
+  const withdrawM = useMutation({
+    mutationFn: withdrawDemo,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'demo'] }),
   });
   const resetM = useMutation({
     mutationFn: resetDemo,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'demo'] }),
   });
+  const clearLogsM = useMutation({
+    mutationFn: clearDemoLogs,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'demo-history'] }),
+  });
   const saveRiskM = useMutation({
     mutationFn: updateRisk,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'risk'] }),
   });
+  const withdrawLiveM = useMutation({ mutationFn: requestWithdraw });
   const execLiveM = useMutation({
     mutationFn: executeLive,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'pending'] }),
@@ -77,6 +101,13 @@ export default function Perps() {
       qc.invalidateQueries({ queryKey: ['perps', 'demo'] });
     },
   });
+
+  const healthBadge = useMemo(() => {
+    const indicator = healthQ.data?.indicator;
+    if (indicator === 'green') return ['badge-success', 'Connected'];
+    if (healthQ.isFetching) return ['badge-warning', 'Slow'];
+    return ['badge-danger', 'Disconnected'];
+  }, [healthQ.data, healthQ.isFetching]);
 
   return (
     <div className="space-y-5">
@@ -90,42 +121,81 @@ export default function Perps() {
       </div>
 
       {tab === 'Overview' && (
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="card-glass">
-            <p className="text-sm text-[var(--text-muted)]">Account</p>
-            <p className="text-lg font-semibold">Demo + Live monitor</p>
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[var(--text-muted)]">Hyperliquid Account</p>
+              <span className={`badge ${healthBadge[0]}`}>{healthBadge[1]}</span>
+            </div>
+            {accountQ.data?.error && <div className="badge badge-danger">{accountQ.data.error.detail}</div>}
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div className="card !p-3"><p className="text-[var(--text-muted)]">Equity</p><p className="font-semibold">{accountQ.data?.equity ?? 0}</p></div>
+              <div className="card !p-3"><p className="text-[var(--text-muted)]">Available</p><p className="font-semibold">{accountQ.data?.available ?? 0}</p></div>
+              <div className="card !p-3"><p className="text-[var(--text-muted)]">Margin Used</p><p className="font-semibold">{accountQ.data?.margin_used ?? 0}</p></div>
+            </div>
+            <div className="text-xs text-[var(--text-muted)] break-all">Address: {accountQ.data?.hl_address || '-'}</div>
+            <div className="flex gap-2">
+              <button className="btn-secondary btn-sm" onClick={() => { positionsQ.refetch(); ordersQ.refetch(); historyQ.refetch(); }}>Refresh Orders/Positions</button>
+              <button className="btn-secondary btn-sm" onClick={() => accountQ.refetch()}>Refresh Balance</button>
+            </div>
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="card !p-3">
+                <p className="text-xs text-[var(--text-muted)] mb-2">Deposit Address</p>
+                <p className="text-xs break-all">{depositAddressQ.data?.deposit_address || 'Wallet not connected'}</p>
+              </div>
+              <div className="card !p-3 space-y-2">
+                <p className="text-xs text-[var(--text-muted)]">Withdraw</p>
+                <input className="input input-sm" placeholder="Address" value={withdrawAddress} onChange={(e) => setWithdrawAddress(e.target.value)} />
+                <input className="input input-sm" type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(Number(e.target.value || 0))} />
+                <button
+                  className="btn-danger btn-sm"
+                  disabled={withdrawLiveM.isPending || !withdrawAddress}
+                  onClick={() => withdrawLiveM.mutate({ address: withdrawAddress, amount: Number(withdrawAmount), confirm: true })}
+                >
+                  Confirm Withdraw
+                </button>
+                {withdrawLiveM.error && <p className="text-xs text-danger">{withdrawLiveM.error?.response?.data?.detail || 'Withdraw failed'}</p>}
+              </div>
+            </div>
           </div>
           <CandlestickChart />
+          <div className="card">
+            <h3 className="font-semibold mb-2">Open Positions</h3>
+            <div className="text-xs space-y-1 max-h-56 overflow-auto">
+              {(positionsQ.data || []).map((row, i) => <div key={i}>{row.coin} {row.side} size {row.size} uPnL {row.live_upnl}</div>)}
+            </div>
+          </div>
+          <div className="card">
+            <h3 className="font-semibold mb-2">Orders + History</h3>
+            <div className="text-xs space-y-1 max-h-56 overflow-auto">
+              {(ordersQ.data || []).slice(0, 8).map((row, i) => <div key={`o-${i}`}>#{row.order_id || i} {row.coin} {row.status}</div>)}
+              {(historyQ.data || []).slice(0, 8).map((row, i) => <div key={`h-${i}`}>Fill {row.coin} pnl {row.closed_pnl}</div>)}
+            </div>
+          </div>
         </div>
       )}
 
       {tab === 'Scanner' && (
         <TierGuard tier="pro">
           <div className="card space-y-3">
-            <button className="btn-primary" onClick={() => scannerM.mutate()} disabled={scannerM.isPending}>
+            <button className="btn-primary" onClick={() => scannerM.mutate({ include_all_models: true, include_all_pairs: true })} disabled={scannerM.isPending}>
               {scannerM.isPending ? 'Running...' : 'Run Scanner'}
             </button>
-            <p className="text-sm text-[var(--text-muted)]">Triggers perps scanner queue and refreshes pending signals.</p>
+            <p className="text-sm text-[var(--text-muted)]">Runs selected models and selected pairs, then returns structured signal strength and scan timestamp.</p>
+            {scannerM.data?.results?.length > 0 && (
+              <div className="text-xs space-y-1">
+                {scannerM.data.results.map((r) => <div key={r.id}>{r.pair} score {r.signal_strength} @ {r.timestamp}</div>)}
+              </div>
+            )}
+            {scannerM.error && <div className="badge badge-danger">{scannerM.error?.response?.data?.detail || 'Scan failed'}</div>}
           </div>
         </TierGuard>
       )}
 
       {tab === 'Models' && (
         <div className="space-y-4">
-          <div className="card grid md:grid-cols-4 gap-2">
-            <input className="input" placeholder="Model name" value={newModel.name} onChange={(e) => setNewModel((p) => ({ ...p, name: e.target.value }))} />
-            <input className="input" placeholder="Pair" value={newModel.pair} onChange={(e) => setNewModel((p) => ({ ...p, pair: e.target.value.toUpperCase() }))} />
-            <input className="input" placeholder="Timeframe" value={newModel.timeframe} onChange={(e) => setNewModel((p) => ({ ...p, timeframe: e.target.value }))} />
-            <button
-              className="btn-primary"
-              disabled={createModelM.isPending || !newModel.name}
-              onClick={() => createModelM.mutate({ ...newModel, active: false })}
-            >
-              {createModelM.isPending ? 'Saving...' : 'Save Model'}
-            </button>
-          </div>
           <div className="card flex items-center justify-between">
-            <p className="text-sm text-[var(--text-muted)]">Need multi-phase rule design and parameterized strategies?</p>
+            <p className="text-sm text-[var(--text-muted)]">Advanced Model Builder only</p>
             <button className="btn-secondary" onClick={() => setBuilderOpen(true)}>Open Advanced Builder</button>
           </div>
           {createModelM.error && <div className="text-sm text-danger">{createModelM.error?.response?.data?.detail || 'Model save failed'}</div>}
@@ -150,10 +220,15 @@ export default function Perps() {
       {tab === 'Demo' && (
         <div className="card space-y-3">
           <p className="text-sm text-[var(--text-muted)]">Balance: <span className="text-[var(--text-primary)]">{demoQ.data?.balance ?? 0}</span></p>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <input className="input max-w-40" type="number" value={demoAmount} onChange={(e) => setDemoAmount(Number(e.target.value || 0))} />
             <button className="btn-success" onClick={() => depositM.mutate(Number(demoAmount))} disabled={depositM.isPending}>Deposit</button>
+            <button className="btn-secondary" onClick={() => withdrawM.mutate(Number(demoAmount))} disabled={withdrawM.isPending}>Withdraw</button>
             <button className="btn-danger" onClick={() => resetM.mutate()} disabled={resetM.isPending}>Reset</button>
+            <button className="btn-ghost" onClick={() => clearLogsM.mutate()} disabled={clearLogsM.isPending}>Clear Logs</button>
+          </div>
+          <div className="text-xs text-[var(--text-muted)]">
+            Open: {demoHistoryQ.data?.open?.length || 0} | Closed: {demoHistoryQ.data?.closed?.length || 0}
           </div>
         </div>
       )}

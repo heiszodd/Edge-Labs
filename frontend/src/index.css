@@ -6,13 +6,13 @@
 
 @layer base {
   :root {
-    --bg-primary: #fafaf7;
-    --bg-secondary: #f5f4ef;
-    --bg-card: #ffffff;
-    --text-primary: #1a1815;
-    --text-muted: #7c7770;
-    --border: rgba(0, 0, 0, 0.08);
-    --border-hover: rgba(0, 0, 0, 0.15);
+    --bg-primary: #f4f1e8;
+    --bg-secondary: #ede8dc;
+    --bg-card: #f8f4eb;
+    --text-primary: #1f1a14;
+    --text-muted: #655f57;
+    --border: rgba(35, 28, 22, 0.18);
+    --border-hover: rgba(35, 28, 22, 0.28);
   }
 
   .dark {
@@ -34,6 +34,7 @@
     color: var(--text-primary);
     font-family: "Inter", sans-serif;
     -webkit-font-smoothing: antialiased;
+    line-height: 1.45;
   }
 
   ::selection {
@@ -216,4 +217,3 @@
     @apply card w-full max-w-lg animate-scale-in max-h-[90vh] overflow-y-auto;
   }
 }
-

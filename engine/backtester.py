@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from statistics import mean
 
 from backend import db
 from engine.ohlcv_cache import fetch_candles_range
@@ -8,54 +9,157 @@ from engine.phase_engine import _make_trade_plan
 from engine.rules import evaluate_rule
 
 
-async def run_backtest(run_id, user_id, model, pair, timeframe, start_date, end_date, capital) -> dict:
-    db._update("backtest_runs", {"status": "running"}, id=run_id, user_id=user_id)
+def _safe_float(value, default=0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+async def run_backtest(
+    run_id,
+    user_id,
+    model,
+    pair,
+    timeframe,
+    start_date,
+    end_date,
+    capital,
+    *,
+    slippage_bps: float = 0.0,
+    commission_pct: float = 0.0,
+) -> dict:
+    db.update_backtest_run(run_id, {"status": "running", "started_at": datetime.utcnow().isoformat()})
     start_ms = int(datetime.fromisoformat(start_date).timestamp() * 1000)
     end_ms = int(datetime.fromisoformat(end_date).timestamp() * 1000)
     candles = await fetch_candles_range(pair, timeframe, start_ms, end_ms)
     if len(candles) < 120:
-        summary = {"trades": 0, "win_rate": 0.0, "total_pnl": 0.0, "max_drawdown": 0.0, "avg_rr": 0.0, "sharpe_ratio": 0.0, "profit_factor": 0.0}
-        db._update("backtest_runs", {"status": "done", "result": summary}, id=run_id, user_id=user_id)
+        summary = {
+            "trades": 0,
+            "win_rate": 0.0,
+            "total_pnl": 0.0,
+            "max_drawdown": 0.0,
+            "avg_rr": 0.0,
+            "sharpe_ratio": 0.0,
+            "profit_factor": 0.0,
+            "equity_curve": [],
+            "drawdown_curve": [],
+        }
+        db.update_backtest_run(run_id, {"status": "done", "results_data": summary, "completed_at": datetime.utcnow().isoformat()})
         return summary
-    bal = float(capital)
-    peak = bal
-    wins = losses = 0
+
+    balance = _safe_float(capital, 10000)
+    peak = balance
+    wins = 0
+    losses = 0
     profits = []
-    for i in range(100, len(candles)-1):
-        w = candles[i-100:i]
-        p1 = evaluate_rule("rule_htf_bullish", w) or evaluate_rule("rule_htf_bearish", w)
-        p2 = evaluate_rule("rule_bos_bullish", w) or evaluate_rule("rule_bos_bearish", w)
-        p3 = evaluate_rule("rule_ote_zone", w)
-        p4 = evaluate_rule("rule_candle_confirmation", w)
+    equity_curve = []
+    drawdown_curve = []
+    closed_trades = []
+
+    for i in range(100, len(candles) - 1):
+        window = candles[i - 100 : i]
+        p1 = evaluate_rule("rule_htf_bullish", window) or evaluate_rule("rule_htf_bearish", window)
+        p2 = evaluate_rule("rule_bos_bullish", window) or evaluate_rule("rule_bos_bearish", window)
+        p3 = evaluate_rule("rule_ote_zone", window)
+        p4 = evaluate_rule("rule_candle_confirmation", window)
         if not (p1 and p2 and p3 and p4):
             continue
-        direction = "long" if w[-1]["close"] >= w[-1]["open"] else "short"
-        plan = _make_trade_plan(w, direction)
-        nxt = candles[i+1]
-        entry, sl, tp = plan["entry"], plan["sl"], plan["tp"]
-        hit_tp = float(nxt["high"]) >= tp if direction == "long" else float(nxt["low"]) <= tp
-        hit_sl = float(nxt["low"]) <= sl if direction == "long" else float(nxt["high"]) >= sl
+
+        direction = "long" if window[-1]["close"] >= window[-1]["open"] else "short"
+        plan = _make_trade_plan(window, direction)
+        nxt = candles[i + 1]
+        raw_entry = _safe_float(plan.get("entry"))
+        raw_sl = _safe_float(plan.get("sl"))
+        raw_tp = _safe_float(plan.get("tp"))
+        slip = raw_entry * (_safe_float(slippage_bps, 0.0) / 10000.0)
+        entry = raw_entry + slip if direction == "long" else raw_entry - slip
+
+        hit_tp = _safe_float(nxt["high"]) >= raw_tp if direction == "long" else _safe_float(nxt["low"]) <= raw_tp
+        hit_sl = _safe_float(nxt["low"]) <= raw_sl if direction == "long" else _safe_float(nxt["high"]) >= raw_sl
+
         if hit_tp and not hit_sl:
-            pnl = abs(tp-entry)
-            wins += 1
+            exit_price = raw_tp
         elif hit_sl and not hit_tp:
-            pnl = -abs(entry-sl)
-            losses += 1
+            exit_price = raw_sl
         else:
-            pnl = float(nxt["close"]) - entry if direction == "long" else entry - float(nxt["close"])
-            wins += pnl > 0
-            losses += pnl <= 0
-        bal += pnl
-        peak = max(peak, bal)
+            exit_price = _safe_float(nxt["close"])
+
+        gross = (exit_price - entry) if direction == "long" else (entry - exit_price)
+        fee = abs(entry) * (_safe_float(commission_pct, 0.0) / 100.0)
+        pnl = gross - fee
+        pnl_pct = (pnl / max(abs(entry), 1e-9)) * 100.0
+        balance += pnl
+        peak = max(peak, balance)
+        drawdown = ((peak - balance) / max(peak, 1e-9)) * 100.0
         profits.append(pnl)
-        db._insert("backtest_trades", {"run_id": run_id, "user_id": user_id, "pair": pair, "timeframe": timeframe, "direction": direction, "entry": entry, "sl": sl, "tp": tp, "pnl": pnl})
+        equity_curve.append({"trade": len(profits), "equity": round(balance, 4)})
+        drawdown_curve.append({"trade": len(profits), "drawdown": round(drawdown, 4)})
+
+        if pnl >= 0:
+            wins += 1
+        else:
+            losses += 1
+
+        trade_row = {
+            "run_id": run_id,
+            "user_id": user_id,
+            "entry_time": datetime.utcfromtimestamp(int(window[-1]["timestamp"]) / 1000).isoformat(),
+            "exit_time": datetime.utcfromtimestamp(int(nxt["timestamp"]) / 1000).isoformat(),
+            "pair": pair,
+            "direction": direction,
+            "entry_price": entry,
+            "exit_price": exit_price,
+            "size_usd": abs(entry),
+            "pnl": pnl,
+            "pnl_pct": pnl_pct,
+            "phase_reached": 4,
+            "rules_passed": {"p1": True, "p2": True, "p3": True, "p4": True},
+            "exit_reason": "tp" if hit_tp and not hit_sl else "sl" if hit_sl and not hit_tp else "close",
+        }
+        db.save_backtest_trade(trade_row)
+        closed_trades.append(trade_row)
+
     total = wins + losses
-    total_pnl = bal - float(capital)
-    max_dd = 0.0 if peak == 0 else (peak - bal) / peak
-    win_rate = (wins / total) if total else 0.0
-    avg_rr = sum(p for p in profits if p > 0) / max(abs(sum(p for p in profits if p < 0)), 1e-9)
-    sharpe = (sum(profits) / max(len(profits), 1)) / max((sum(abs(p) for p in profits) / max(len(profits), 1)), 1e-9)
-    profit_factor = sum(p for p in profits if p > 0) / max(abs(sum(p for p in profits if p < 0)), 1e-9)
-    summary = {"trades": total, "win_rate": win_rate, "total_pnl": total_pnl, "max_drawdown": max_dd, "avg_rr": avg_rr, "sharpe_ratio": sharpe, "profit_factor": profit_factor}
-    db._update("backtest_runs", {"status": "done", "result": summary}, id=run_id, user_id=user_id)
+    total_pnl = sum(profits) if profits else 0.0
+    max_dd = max((x["drawdown"] for x in drawdown_curve), default=0.0)
+    win_rate = (wins / total) * 100.0 if total else 0.0
+    positive = [p for p in profits if p > 0]
+    negative = [p for p in profits if p < 0]
+    avg_win = mean(positive) if positive else 0.0
+    avg_loss = abs(mean(negative)) if negative else 0.0
+    avg_rr = avg_win / max(avg_loss, 1e-9) if (avg_win or avg_loss) else 0.0
+    profit_factor = sum(positive) / max(abs(sum(negative)), 1e-9) if profits else 0.0
+    returns = [(closed_trades[i]["pnl"] / max(abs(closed_trades[i]["entry_price"]), 1e-9)) for i in range(len(closed_trades))]
+    sharpe = (mean(returns) / max((mean([abs(x) for x in returns]) if returns else 0.0), 1e-9)) if returns else 0.0
+
+    summary = {
+        "status": "complete",
+        "trades": total,
+        "win_rate": round(win_rate, 4),
+        "total_pnl": round(total_pnl, 4),
+        "max_drawdown": round(max_dd, 4),
+        "avg_rr": round(avg_rr, 4),
+        "sharpe_ratio": round(sharpe, 4),
+        "profit_factor": round(profit_factor, 4),
+        "equity_curve": equity_curve,
+        "drawdown_curve": drawdown_curve,
+        "slippage_bps": slippage_bps,
+        "commission_pct": commission_pct,
+    }
+    db.update_backtest_run(
+        run_id,
+        {
+            "status": "done",
+            "total_trades": total,
+            "win_rate": summary["win_rate"],
+            "total_pnl": summary["total_pnl"],
+            "max_drawdown": summary["max_drawdown"],
+            "avg_rr": summary["avg_rr"],
+            "sharpe_ratio": summary["sharpe_ratio"],
+            "profit_factor": summary["profit_factor"],
+            "results_data": summary,
+            "completed_at": datetime.utcnow().isoformat(),
+        },
+    )
     return summary

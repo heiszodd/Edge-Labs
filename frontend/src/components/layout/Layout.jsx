@@ -24,18 +24,17 @@ export default function Layout() {
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[var(--bg-card)]/90 backdrop-blur-md border-t border-[var(--border)] flex items-center justify-around px-2 py-2">
         {[
-          ['/', '🏠', 'Home'],
-          ['/perps', '📈', 'Perps'],
-          ['/degen', '🔥', 'Degen'],
-          ['/predictions', '🎯', 'Predict'],
-          ['/settings', '⚙️', 'More'],
-        ].map(([to, icon, label]) => (
+          ['/', 'Home'],
+          ['/perps', 'Perps'],
+          ['/degen', 'Degen'],
+          ['/predictions', 'Pred'],
+          ['/profile', 'Me'],
+        ].map(([to, label]) => (
           <Link
             key={to}
             to={to}
             className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-2xl text-xs font-medium transition-all duration-200 ${pathname === to ? 'text-signal-400 bg-signal-500/10' : 'text-[var(--text-muted)]'}`}
           >
-            <span className="text-lg">{icon}</span>
             {label}
           </Link>
         ))}
@@ -43,4 +42,3 @@ export default function Layout() {
     </div>
   );
 }
-
