@@ -28,6 +28,27 @@ def _get_client() -> Client | None:
 
 _client = _get_client()
 
+MODEL_COLUMNS = {
+    "name",
+    "pair",
+    "timeframe",
+    "active",
+    "description",
+    "model_meta",
+    "phase1_rules",
+    "phase2_rules",
+    "phase3_rules",
+    "phase4_rules",
+    "min_quality_score",
+    "grade",
+    "signals_today",
+    "total_signals",
+    "pass_rate",
+    "last_signal_at",
+    "is_preset",
+    "is_public",
+}
+
 
 def _table(name: str):
     if _client is None:
@@ -238,13 +259,14 @@ def get_model(model_id, user_id) -> dict:
 
 
 def save_model(user_id, data) -> int:
-    payload = {**data, "user_id": user_id}
+    payload = {"user_id": user_id, **{k: v for k, v in (data or {}).items() if k in MODEL_COLUMNS}}
     row = _insert("models", payload)
     return int(row.get("id", 0) or 0)
 
 
-def update_model(model_id, user_id, data):
-    _update("models", data, id=model_id, user_id=user_id)
+def update_model(model_id, user_id, data) -> bool:
+    payload = {k: v for k, v in (data or {}).items() if k in MODEL_COLUMNS}
+    return _update("models", payload, id=model_id, user_id=user_id)
 
 
 def delete_model(model_id, user_id):

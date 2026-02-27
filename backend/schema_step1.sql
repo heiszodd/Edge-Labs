@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS models (
     timeframe         TEXT DEFAULT '1h',
     active            BOOL DEFAULT false,
     description       TEXT DEFAULT '',
+    model_meta        JSONB DEFAULT '{}',
     phase1_rules      JSONB DEFAULT '[]',
     phase2_rules      JSONB DEFAULT '[]',
     phase3_rules      JSONB DEFAULT '[]',

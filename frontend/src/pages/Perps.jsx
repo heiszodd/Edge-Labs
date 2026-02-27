@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import CandlestickChart from '../components/charts/CandlestickChart';
 import ModelCard from '../components/models/ModelCard';
+import AdvancedModelBuilder from '../components/models/AdvancedModelBuilder';
 import SignalCard from '../components/signals/SignalCard';
 import TierGuard from '../components/common/TierGuard';
 import {
@@ -21,6 +22,7 @@ const tabs = ['Overview', 'Scanner', 'Models', 'Pending', 'Demo', 'Risk'];
 
 export default function Perps() {
   const [tab, setTab] = useState('Overview');
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [newModel, setNewModel] = useState({ name: '', pair: 'BTCUSDT', timeframe: '1h' });
   const [demoAmount, setDemoAmount] = useState(500);
   const [riskForm, setRiskForm] = useState({
@@ -122,6 +124,11 @@ export default function Perps() {
               {createModelM.isPending ? 'Saving...' : 'Save Model'}
             </button>
           </div>
+          <div className="card flex items-center justify-between">
+            <p className="text-sm text-[var(--text-muted)]">Need multi-phase rule design and parameterized strategies?</p>
+            <button className="btn-secondary" onClick={() => setBuilderOpen(true)}>Open Advanced Builder</button>
+          </div>
+          {createModelM.error && <div className="text-sm text-danger">{createModelM.error?.response?.data?.detail || 'Model save failed'}</div>}
           <div className="grid md:grid-cols-2 gap-4">
             {(modelsQ.data || []).map((model) => <ModelCard key={model.id} model={model} />)}
           </div>
@@ -167,6 +174,43 @@ export default function Perps() {
           <button className="btn-primary md:col-span-2" onClick={() => saveRiskM.mutate(riskForm)} disabled={saveRiskM.isPending || riskQ.isLoading}>
             {saveRiskM.isPending ? 'Saving...' : 'Save Risk Settings'}
           </button>
+        </div>
+      )}
+
+      {builderOpen && (
+        <div className="modal-overlay">
+          <div className="modal !max-w-[95vw] !w-[1300px] !p-0 overflow-hidden">
+            <AdvancedModelBuilder
+              onCancel={() => setBuilderOpen(false)}
+              onSave={(model) => {
+                const payload = {
+                  name: model.name,
+                  pair: model.pair,
+                  timeframe: model.timeframe,
+                  active: false,
+                  model_meta: {
+                    direction: model.direction,
+                    logic: model.logic,
+                    sl: model.sl,
+                    tp1: model.tp1,
+                    tp2: model.tp2,
+                    tp3: model.tp3,
+                    leverage: model.leverage,
+                    auto_trade: model.autoTrade,
+                    auto_threshold: model.autoThreshold,
+                  },
+                  min_quality_score: model.minQualityScore,
+                  phase1_rules: model.phase1Rules,
+                  phase2_rules: model.phase2Rules,
+                  phase3_rules: model.phase3Rules,
+                  phase4_rules: model.phase4Rules,
+                };
+                createModelM.mutate(payload, {
+                  onSuccess: () => setBuilderOpen(false),
+                });
+              }}
+            />
+          </div>
         </div>
       )}
     </div>

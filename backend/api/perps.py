@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend import db
@@ -19,7 +19,16 @@ class ModelBody(BaseModel):
     pair: str | None = None
     timeframe: str | None = None
     active: bool = True
-    config: dict[str, Any] = Field(default_factory=dict)
+    description: str | None = None
+    model_meta: dict[str, Any] = Field(default_factory=dict)
+    phase1_rules: list[dict[str, Any]] = Field(default_factory=list)
+    phase2_rules: list[dict[str, Any]] = Field(default_factory=list)
+    phase3_rules: list[dict[str, Any]] = Field(default_factory=list)
+    phase4_rules: list[dict[str, Any]] = Field(default_factory=list)
+    min_quality_score: float | None = None
+    grade: str | None = None
+    is_preset: bool = False
+    is_public: bool = False
 
 
 class ToggleBody(BaseModel):
@@ -81,13 +90,17 @@ def list_models(user: dict = Depends(get_current_user)):
 
 @router.post("/models")
 def create_model(body: ModelBody, user: dict = Depends(get_current_user)):
-    model_id = db.save_model(user["id"], body.model_dump())
+    model_id = db.save_model(user["id"], body.model_dump(exclude_none=True))
+    if model_id <= 0:
+        raise HTTPException(status_code=400, detail="Model could not be saved")
     return ok({"id": model_id})
 
 
 @router.put("/models/{model_id}")
 def update_model(model_id: int, body: ModelBody, user: dict = Depends(get_current_user)):
-    db.update_model(model_id, user["id"], body.model_dump())
+    updated = db.update_model(model_id, user["id"], body.model_dump(exclude_none=True))
+    if not updated:
+        raise HTTPException(status_code=400, detail="Model could not be updated")
     return ok({"id": model_id})
 
 
