@@ -151,7 +151,14 @@ async def _load_hl_account(uid: str) -> dict[str, Any]:
         "equity": summary.get("account_value", 0.0),
         "available": summary.get("available", 0.0),
         "margin_used": summary.get("margin_used", 0.0),
-        "error": None if failure is None else {"reason": failure.reason, "detail": failure.detail},
+        "error": None
+        if failure is None
+        else {
+            "reason": failure.reason,
+            "detail": failure.detail,
+            "status_code": failure.status_code,
+            "response_body": failure.response_body,
+        },
     }
 
 

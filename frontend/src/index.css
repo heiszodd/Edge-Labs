@@ -35,6 +35,7 @@
     font-family: "Inter", sans-serif;
     -webkit-font-smoothing: antialiased;
     line-height: 1.45;
+    overflow-x: hidden;
   }
 
   ::selection {
@@ -75,6 +76,7 @@
 
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-medium transition-all duration-200 ease-spring active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+    min-height: 44px;
   }
 
   .btn-primary {
@@ -107,6 +109,7 @@
 
   .input {
     @apply w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)] px-4 py-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition-all duration-200 focus:border-signal-400 focus:ring-2 focus:ring-signal-400/20;
+    min-height: 44px;
   }
 
   .input-sm {
@@ -163,10 +166,12 @@
 
   .tab-bar {
     @apply flex gap-1 p-1 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border)];
+    overflow-x: auto;
   }
 
   .tab {
     @apply flex-1 rounded-xl px-4 py-2 text-sm font-medium text-[var(--text-muted)] transition-all duration-200 cursor-pointer;
+    min-width: max-content;
   }
 
   .tab.active {
@@ -215,5 +220,21 @@
 
   .modal {
     @apply card w-full max-w-lg animate-scale-in max-h-[90vh] overflow-y-auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .card {
+    @apply p-4 rounded-2xl;
+  }
+  .btn {
+    @apply px-4;
+  }
+  .modal {
+    max-height: 94vh;
+    @apply rounded-2xl;
+  }
+  .tab {
+    @apply text-xs px-3;
   }
 }

@@ -13,6 +13,11 @@ def _to_num(value, default=0.0) -> float:
 
 
 async def _state(address: str) -> tuple[dict, ApiFailure | None]:
+    if not isinstance(address, str) or not address.strip():
+        return {}, ApiFailure(reason="invalid_address", detail="Wallet address is missing")
+    cleaned = address.strip()
+    if not cleaned.startswith("0x") or len(cleaned) != 42:
+        return {}, ApiFailure(reason="invalid_address", detail="Hyperliquid wallet address must be 0x-prefixed 42 chars")
     data, failure = await request_json("POST", _BASE, json={"type": "clearinghouseState", "user": address})
     return (data or {}), failure
 

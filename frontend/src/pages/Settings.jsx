@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { connectWallet, getWalletStatus } from '../api/wallets';
-import { getSettings, saveSettings } from '../api/users';
+import { generateTelegramLinkCode, getSettings, saveSettings, unlinkTelegram } from '../api/users';
 import { saveAlertSettings } from '../api/alerts';
+import apiClient from '../api/client';
 
 export default function Settings() {
-  const [wallet, setWallet] = useState({ chain: 'hl', raw_key_or_seed: '' });
+  const [wallet, setWallet] = useState({ chain: 'hl', raw_key_or_seed: '', wallet_address: '' });
   const [presets, setPresets] = useState({ buy_preset_1: 25, buy_preset_2: 50, buy_preset_3: 100, buy_preset_4: 250 });
   const [alerts, setAlerts] = useState({ alert_telegram: true, alert_email: false, alert_web_push: false });
   const qc = useQueryClient();
@@ -15,6 +16,11 @@ export default function Settings() {
     queryKey: ['users', 'settings'],
     queryFn: getSettings,
     staleTime: 30_000,
+  });
+  const meQ = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: () => apiClient.get('/api/auth/me').then((r) => r.data),
+    staleTime: 15_000,
   });
 
   useEffect(() => {
@@ -36,7 +42,7 @@ export default function Settings() {
   }, [settingsQ.data]);
 
   const connectM = useMutation({
-    mutationFn: (payload) => connectWallet(payload.chain, payload.raw_key_or_seed),
+    mutationFn: (payload) => connectWallet(payload.chain, payload.raw_key_or_seed, payload.wallet_address),
     onSuccess: () => {
       setWallet((prev) => ({ ...prev, raw_key_or_seed: '' }));
       qc.invalidateQueries({ queryKey: ['wallets', 'status'] });
@@ -44,6 +50,14 @@ export default function Settings() {
   });
   const savePresetsM = useMutation({ mutationFn: saveSettings, onSuccess: () => qc.invalidateQueries({ queryKey: ['users', 'settings'] }) });
   const saveAlertsM = useMutation({ mutationFn: saveAlertSettings });
+  const tgLinkM = useMutation({
+    mutationFn: generateTelegramLinkCode,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['auth', 'me'] }),
+  });
+  const tgUnlinkM = useMutation({
+    mutationFn: unlinkTelegram,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['auth', 'me'] }),
+  });
 
   return (
     <div className="space-y-4">
@@ -57,8 +71,9 @@ export default function Settings() {
             <option value="sol">Solana</option>
             <option value="poly">Polygon</option>
           </select>
-          <input className="input md:col-span-2" value={wallet.raw_key_or_seed} onChange={(e) => setWallet((p) => ({ ...p, raw_key_or_seed: e.target.value }))} placeholder="Private key or seed" />
-          <button className="btn-primary" onClick={() => connectM.mutate(wallet)} disabled={connectM.isPending || !wallet.raw_key_or_seed}>
+          <input className="input" value={wallet.wallet_address} onChange={(e) => setWallet((p) => ({ ...p, wallet_address: e.target.value }))} placeholder="Wallet address (recommended)" />
+          <input className="input md:col-span-2" value={wallet.raw_key_or_seed} onChange={(e) => setWallet((p) => ({ ...p, raw_key_or_seed: e.target.value }))} placeholder="Private key or seed (optional for read-only)" />
+          <button className="btn-primary" onClick={() => connectM.mutate(wallet)} disabled={connectM.isPending || (!wallet.raw_key_or_seed && !wallet.wallet_address)}>
             {connectM.isPending ? 'Connecting...' : 'Connect Wallet'}
           </button>
         </div>
@@ -90,6 +105,26 @@ export default function Settings() {
         <button className="btn-primary" onClick={() => saveAlertsM.mutate(alerts)} disabled={saveAlertsM.isPending}>
           {saveAlertsM.isPending ? 'Saving...' : 'Save Alert Settings'}
         </button>
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-semibold">Telegram Linking</h2>
+        <p className="text-sm text-[var(--text-muted)]">
+          Status: {meQ.data?.telegram_linked ? 'Linked' : 'Not Linked'}
+          {meQ.data?.telegram_username ? ` (@${meQ.data.telegram_username})` : ''}
+        </p>
+        <p className="text-xs text-[var(--text-muted)]">
+          1) Generate code 2) Send code to the Telegram bot 3) Bot verifies and links your account. Codes expire in 10 minutes.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-primary" onClick={() => tgLinkM.mutate()} disabled={tgLinkM.isPending}>
+            {tgLinkM.isPending ? 'Generating...' : 'Generate Verification Code'}
+          </button>
+          <button className="btn-danger" onClick={() => tgUnlinkM.mutate()} disabled={tgUnlinkM.isPending || !meQ.data?.telegram_linked}>
+            Unlink Telegram
+          </button>
+        </div>
+        {tgLinkM.data?.token && <div className="badge badge-info">Verification Code: {tgLinkM.data.token}</div>}
       </div>
     </div>
   );

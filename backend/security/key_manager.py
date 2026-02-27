@@ -16,8 +16,10 @@ def _detect_format(raw_input: str) -> tuple[str, str]:
 
     if len(value) >= 32 and " " not in value:
         lowered = value.lower()
-        if lowered.startswith("0x") and len(value) in (42, 44):
-            raise ValueError("Looks like a public address, not a private key")
+        if lowered.startswith("0x") and len(value) == 42:
+            return "address_only", value
+        if lowered.startswith("0x") and len(value) in (43, 44):
+            raise ValueError("Invalid address length")
         return "private_key", f"derived_{abs(hash(value)) % 10**12}"
 
     raise ValueError("Unsupported key format. Provide a 12/24-word seed phrase or private key")

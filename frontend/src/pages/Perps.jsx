@@ -43,6 +43,8 @@ export default function Perps() {
     max_leverage: 10,
     max_daily_trades: 10,
   });
+  const [selectedModelIds, setSelectedModelIds] = useState([]);
+  const [selectedPairs, setSelectedPairs] = useState([]);
   const qc = useQueryClient();
 
   const accountQ = useQuery({ queryKey: ['perps', 'account'], queryFn: () => getAccount(7), refetchInterval: 7000 });
@@ -60,6 +62,16 @@ export default function Perps() {
   useEffect(() => {
     if (riskQ.data) setRiskForm((prev) => ({ ...prev, ...riskQ.data }));
   }, [riskQ.data]);
+  useEffect(() => {
+    const ids = (modelsQ.data || []).map((m) => Number(m.id)).filter(Boolean);
+    if (ids.length && selectedModelIds.length === 0) {
+      setSelectedModelIds(ids);
+    }
+    const pairs = Array.from(new Set((modelsQ.data || []).map((m) => (m.pair || '').toUpperCase()).filter(Boolean)));
+    if (pairs.length && selectedPairs.length === 0) {
+      setSelectedPairs(pairs);
+    }
+  }, [modelsQ.data]);
 
   const scannerM = useMutation({
     mutationFn: runScanner,
@@ -128,6 +140,11 @@ export default function Perps() {
               <span className={`badge ${healthBadge[0]}`}>{healthBadge[1]}</span>
             </div>
             {accountQ.data?.error && <div className="badge badge-danger">{accountQ.data.error.detail}</div>}
+            {accountQ.data?.error?.response_body && (
+              <pre className="text-xs text-danger bg-[var(--bg-secondary)] p-2 rounded-xl overflow-auto">
+                {String(accountQ.data.error.response_body).slice(0, 500)}
+              </pre>
+            )}
             <div className="grid grid-cols-3 gap-3 text-sm">
               <div className="card !p-3"><p className="text-[var(--text-muted)]">Equity</p><p className="font-semibold">{accountQ.data?.equity ?? 0}</p></div>
               <div className="card !p-3"><p className="text-[var(--text-muted)]">Available</p><p className="font-semibold">{accountQ.data?.available ?? 0}</p></div>
@@ -178,7 +195,61 @@ export default function Perps() {
       {tab === 'Scanner' && (
         <TierGuard tier="pro">
           <div className="card space-y-3">
-            <button className="btn-primary" onClick={() => scannerM.mutate({ include_all_models: true, include_all_pairs: true })} disabled={scannerM.isPending}>
+            <div className="grid md:grid-cols-2 gap-3">
+              <div>
+                <p className="text-sm font-medium mb-2">Models</p>
+                <div className="flex gap-2 mb-2">
+                  <button className="btn-secondary btn-sm" onClick={() => setSelectedModelIds((modelsQ.data || []).map((m) => Number(m.id)).filter(Boolean))}>Select All</button>
+                  <button className="btn-ghost btn-sm" onClick={() => setSelectedModelIds([])}>Clear</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(modelsQ.data || []).map((model) => {
+                    const id = Number(model.id);
+                    const active = selectedModelIds.includes(id);
+                    return (
+                      <button
+                        key={id}
+                        className={`btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setSelectedModelIds((prev) => (active ? prev.filter((x) => x !== id) : [...prev, id]))}
+                      >
+                        {model.name || `Model ${id}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium mb-2">Pairs</p>
+                <div className="flex gap-2 mb-2">
+                  <button className="btn-secondary btn-sm" onClick={() => setSelectedPairs(Array.from(new Set((modelsQ.data || []).map((m) => (m.pair || '').toUpperCase()).filter(Boolean))))}>Select All</button>
+                  <button className="btn-ghost btn-sm" onClick={() => setSelectedPairs([])}>Clear</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(new Set((modelsQ.data || []).map((m) => (m.pair || '').toUpperCase()).filter(Boolean))).map((pair) => {
+                    const active = selectedPairs.includes(pair);
+                    return (
+                      <button
+                        key={pair}
+                        className={`btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setSelectedPairs((prev) => (active ? prev.filter((x) => x !== pair) : [...prev, pair]))}
+                      >
+                        {pair}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <button
+              className="btn-primary"
+              onClick={() => scannerM.mutate({
+                model_ids: selectedModelIds,
+                pairs: selectedPairs,
+                include_all_models: selectedModelIds.length === 0,
+                include_all_pairs: selectedPairs.length === 0,
+              })}
+              disabled={scannerM.isPending || ((modelsQ.data || []).length > 0 && selectedModelIds.length === 0)}
+            >
               {scannerM.isPending ? 'Running...' : 'Run Scanner'}
             </button>
             <p className="text-sm text-[var(--text-muted)]">Runs selected models and selected pairs, then returns structured signal strength and scan timestamp.</p>

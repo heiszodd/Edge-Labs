@@ -186,6 +186,8 @@ def me(user: dict = Depends(get_current_user)) -> dict:
         "role": user.get("role", "user"),
         "is_admin": bool(user.get("is_admin", False)),
         "telegram_linked": bool(user.get("telegram_linked")),
+        "telegram_username": user.get("telegram_username"),
+        "telegram_link_expires": user.get("telegram_link_expires"),
     }
 
 
@@ -226,6 +228,21 @@ def telegram_verify(body: TelegramVerifyBody, x_service_key: str | None = Header
             "telegram_user_id": body.telegram_user_id,
             "telegram_username": body.telegram_username,
             "telegram_linked": True,
+            "telegram_link_token": None,
+            "telegram_link_expires": None,
+        },
+    )
+    return {"success": True}
+
+
+@router.post("/telegram-unlink")
+def telegram_unlink(user: dict = Depends(get_current_user)) -> dict:
+    db.update_user(
+        user.get("id"),
+        {
+            "telegram_user_id": None,
+            "telegram_username": None,
+            "telegram_linked": False,
             "telegram_link_token": None,
             "telegram_link_expires": None,
         },

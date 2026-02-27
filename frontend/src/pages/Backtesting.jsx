@@ -63,6 +63,7 @@ export default function Backtesting() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [sortBy, setSortBy] = useState('entry_time');
+  const [formErrors, setFormErrors] = useState({});
 
   useEffect(() => {
     getModels().then((nextModels) => {
@@ -86,6 +87,15 @@ export default function Backtesting() {
   };
 
   const runBacktest = async () => {
+    const errors = {};
+    if (!Number(form.capital) || Number(form.capital) <= 0) errors.capital = 'Starting capital must be greater than 0';
+    if (Number(form.slippage_bps) < 0) errors.slippage_bps = 'Slippage cannot be negative';
+    if (Number(form.commission_pct) < 0) errors.commission_pct = 'Commission cannot be negative';
+    if (!form.model_id) errors.model_id = 'Select a strategy model';
+    if (!form.pair) errors.pair = 'Pair is required';
+    if (!form.start_date || !form.end_date) errors.date = 'Select start and end date';
+    setFormErrors(errors);
+    if (Object.keys(errors).length) return;
     setLoading(true);
     setResult(null);
     try {
@@ -134,22 +144,51 @@ export default function Backtesting() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div className="xl:col-span-1 space-y-4">
             <div className="card space-y-3">
-              <h2 className="font-semibold">Backtest Form</h2>
-              <select className="input" value={form.model_id} onChange={(e) => setForm((p) => ({ ...p, model_id: e.target.value }))}>
+              <h2 className="font-semibold">Backtest Configuration</h2>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Section 4: Strategy Selection</p>
+                <label className="text-xs text-[var(--text-muted)]">Model</label>
+                <select className="input" value={form.model_id} onChange={(e) => setForm((p) => ({ ...p, model_id: e.target.value }))}>
                 {models.map((model) => <option key={model.id} value={model.id}>{model.name || `Model ${model.id}`}</option>)}
-              </select>
-              <button className="btn bg-zinc-700 hover:bg-zinc-600" onClick={() => setShowBuilder((v) => !v)}>Build Strategy</button>
-              <input className="input" placeholder="Pair (BTCUSDT)" value={form.pair} onChange={(e) => setForm((p) => ({ ...p, pair: e.target.value }))} />
-              <select className="input" value={form.timeframe} onChange={(e) => setForm((p) => ({ ...p, timeframe: e.target.value }))}>
-                {timeframeOptions.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
-              </select>
-              <div className="grid grid-cols-2 gap-2">
-                <input type="date" className="input" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
-                <input type="date" className="input" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
+                </select>
+                {formErrors.model_id && <p className="text-xs text-danger">{formErrors.model_id}</p>}
               </div>
-              <input className="input" type="number" min="100" value={form.capital} onChange={(e) => setForm((p) => ({ ...p, capital: e.target.value }))} />
-              <input className="input" type="number" min="0" value={form.slippage_bps} onChange={(e) => setForm((p) => ({ ...p, slippage_bps: e.target.value }))} placeholder="Slippage bps" />
-              <input className="input" type="number" min="0" step="0.01" value={form.commission_pct} onChange={(e) => setForm((p) => ({ ...p, commission_pct: e.target.value }))} placeholder="Commission %" />
+              <button className="btn bg-zinc-700 hover:bg-zinc-600" onClick={() => setShowBuilder((v) => !v)}>Build Strategy</button>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Section 1: Capital Settings</p>
+                <label className="text-xs text-[var(--text-muted)]">Starting Capital (e.g., 1000 USDT)</label>
+                <input className="input" type="number" min="1" placeholder="1000" value={form.capital} onChange={(e) => setForm((p) => ({ ...p, capital: e.target.value }))} />
+                {formErrors.capital && <p className="text-xs text-danger">{formErrors.capital}</p>}
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Section 2: Risk Settings</p>
+                <label className="text-xs text-[var(--text-muted)]">Pair (e.g., BTCUSDT)</label>
+                <input className="input" placeholder="BTCUSDT" value={form.pair} onChange={(e) => setForm((p) => ({ ...p, pair: e.target.value.toUpperCase() }))} />
+                <label className="text-xs text-[var(--text-muted)]">Timeframe</label>
+                <select className="input" value={form.timeframe} onChange={(e) => setForm((p) => ({ ...p, timeframe: e.target.value }))}>
+                {timeframeOptions.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-[var(--text-muted)]">Start Date</label>
+                  <input type="date" className="input" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--text-muted)]">End Date</label>
+                  <input type="date" className="input" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
+                </div>
+              </div>
+              {formErrors.date && <p className="text-xs text-danger">{formErrors.date}</p>}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Section 3: Execution Settings</p>
+                <label className="text-xs text-[var(--text-muted)]">Slippage (%) - example: 0.10</label>
+                <input className="input" type="number" min="0" value={form.slippage_bps} onChange={(e) => setForm((p) => ({ ...p, slippage_bps: e.target.value }))} placeholder="0.10" />
+                {formErrors.slippage_bps && <p className="text-xs text-danger">{formErrors.slippage_bps}</p>}
+                <label className="text-xs text-[var(--text-muted)]">Commission (%) - example: 0.04</label>
+                <input className="input" type="number" min="0" step="0.01" value={form.commission_pct} onChange={(e) => setForm((p) => ({ ...p, commission_pct: e.target.value }))} placeholder="0.04" />
+                {formErrors.commission_pct && <p className="text-xs text-danger">{formErrors.commission_pct}</p>}
+              </div>
               <button className="btn bg-violet-500 hover:bg-violet-600" onClick={runBacktest}>Run Backtest</button>
             </div>
 

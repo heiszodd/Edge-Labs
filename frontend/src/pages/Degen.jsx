@@ -17,6 +17,7 @@ import {
   getWatchlist,
   resetDemo,
   runScanner,
+  scanContract,
   withdrawDemo,
 } from '../api/degen';
 
@@ -27,7 +28,10 @@ export default function Degen() {
   const [slippage, setSlippage] = useState(100);
   const [demoAmount, setDemoAmount] = useState(200);
   const [walletInput, setWalletInput] = useState('');
+  const [caInput, setCaInput] = useState('');
   const [result, setResult] = useState(null);
+  const [scanReport, setScanReport] = useState(null);
+  const [caError, setCaError] = useState('');
 
   const demoQ = useQuery({ queryKey: ['degen', 'demo'], queryFn: getDemo, staleTime: 30_000 });
   const demoHistoryQ = useQuery({ queryKey: ['degen', 'demo-history'], queryFn: getDemoHistory, staleTime: 30_000 });
@@ -62,6 +66,13 @@ export default function Degen() {
     mutationFn: (address) => addTrackedWallet({ wallet_address: address, auto_mirror: false }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'tracked'] }),
   });
+  const scanM = useMutation({
+    mutationFn: (address) => scanContract(address),
+    onSuccess: (data) => {
+      setCaError('');
+      setScanReport(data);
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -80,6 +91,44 @@ export default function Degen() {
           {scannerM.error && <p className="text-sm text-danger">{scannerM.error?.response?.data?.detail || 'Scanner failed'}</p>}
         </div>
       </TierGuard>
+
+      <div className="card space-y-3">
+        <h2 className="font-semibold">Contract Address Scanner</h2>
+        <label className="text-sm text-[var(--text-muted)]">Paste Token Contract Address</label>
+        <div className="flex flex-col md:flex-row gap-2">
+          <input className="input" value={caInput} onChange={(e) => setCaInput(e.target.value.trim())} placeholder="Paste Token Contract Address" />
+          <button
+            className="btn-primary"
+            disabled={scanM.isPending || !caInput}
+            onClick={() => {
+              const ok = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(caInput);
+              if (!ok) {
+                setCaError('Invalid Solana contract address format');
+                return;
+              }
+              scanM.mutate(caInput);
+            }}
+          >
+            {scanM.isPending ? 'Scanning...' : 'Scan'}
+          </button>
+        </div>
+        {caError && <div className="badge badge-danger">{caError}</div>}
+        {scanM.error && <div className="badge badge-danger">{scanM.error?.response?.data?.detail || 'Scan failed'}</div>}
+        {scanReport && (
+          <div className="card !p-3 space-y-1 text-sm">
+            <p>Name: {scanReport.symbol || 'Unknown'}</p>
+            <p>Price: {scanReport.price_usd ?? 0}</p>
+            <p>Liquidity: {scanReport.liquidity_usd ?? 0}</p>
+            <p>Volume: {scanReport.volume_24h ?? 0}</p>
+            <p>CA: {caInput.slice(0, 4)}...</p>
+            <p>Risk: {scanReport.grade || 'D'} | Score: {scanReport.score ?? 0}</p>
+            <div className="flex gap-2">
+              <button className="btn-secondary btn-sm" onClick={() => setSelected({ token_name: scanReport.symbol || 'Token', token_address: caInput })}>Ape (Demo)</button>
+              <button className="btn-primary btn-sm" onClick={() => setSelected({ token_name: scanReport.symbol || 'Token', token_address: caInput })}>Ape (Live)</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
         {(scannerResultsQ.data || []).map((row) => (
