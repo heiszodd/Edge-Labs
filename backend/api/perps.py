@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from backend import db
 from backend.api.common import ok
 from backend.dependencies import get_current_user, require_tier
+from engine.ohlcv_cache import fetch_candles
 
 router = APIRouter(prefix="/api/perps", tags=["perps"])
 
@@ -63,14 +64,13 @@ def get_history(user: dict = Depends(get_current_user)):
 
 
 @router.get("/ohlcv")
-def get_ohlcv(pair: str, timeframe: str = "1h", limit: int = Query(100, ge=1, le=500), user: dict = Depends(get_current_user)):
-    now = datetime.now(timezone.utc)
-    candles = []
-    for i in range(limit):
-        ts = now - timedelta(minutes=i)
-        base = 100 + i * 0.1
-        candles.append({"time": ts.isoformat(), "open": base, "high": base + 1, "low": base - 1, "close": base + 0.5, "volume": 10 + i})
-    candles.reverse()
+async def get_ohlcv(
+    pair: str = Query("BTCUSDT"),
+    timeframe: str = Query("1h"),
+    limit: int = Query(100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    candles = await fetch_candles(pair, timeframe, limit)
     return ok({"pair": pair, "timeframe": timeframe, "candles": candles})
 
 

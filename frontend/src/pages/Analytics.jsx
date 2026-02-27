@@ -8,7 +8,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import apiClient from '../api/client';
+import { generateAiInsights, getAiInsights, getPerformance, getTradeHistory } from '../api/analytics';
+import { createEntry, deleteEntry, listEntries, updateEntry } from '../api/journal';
 import TierGuard from '../components/common/TierGuard';
 
 const tabs = ['Performance', 'AI Insights', 'Journal'];
@@ -27,18 +28,17 @@ export default function Analytics() {
   const [editing, setEditing] = useState(null);
 
   const loadPerformance = () => {
-    apiClient.get('/api/analytics/performance', { params: { section, period } })
-      .then((res) => setPerformance(res?.data?.data || {}))
+    getPerformance(section, period)
+      .then((res) => setPerformance(res || {}))
       .catch(() => setPerformance({}));
-    apiClient.get('/api/analytics/trade-history')
-      .then((res) => {
-        const data = res?.data?.data || {};
+    getTradeHistory()
+      .then((data) => {
         const combined = ['perps', 'degen', 'predictions'].flatMap((key) => (data[key] || []).map((row) => ({ ...row, section: key })));
         setHistoryRows(combined);
       }).catch(() => setHistoryRows([]));
   };
 
-  const loadJournal = () => apiClient.get('/api/journal').then((res) => setEntries(res?.data?.data || [])).catch(() => setEntries([]));
+  const loadJournal = () => listEntries().then((res) => setEntries(res || [])).catch(() => setEntries([]));
 
   useEffect(() => {
     loadPerformance();
@@ -56,10 +56,10 @@ export default function Analytics() {
   const generateInsights = async () => {
     setInsightLoading(true);
     try {
-      await apiClient.post('/api/analytics/ai-insights', { period: 'weekly', section });
-      const res = await apiClient.get('/api/analytics/ai-insights');
-      setInsight(res?.data?.data || null);
-      setMissed((res?.data?.data?.missed_setups || []));
+      await generateAiInsights({ period: 'weekly', section });
+      const res = await getAiInsights();
+      setInsight(res || null);
+      setMissed((res?.missed_setups || []));
     } finally {
       setInsightLoading(false);
     }
@@ -67,15 +67,15 @@ export default function Analytics() {
 
   const saveEntry = async () => {
     const payload = { title: editing.title, body: editing.body, section: editing.section, trade_id: editing.trade_id || null };
-    if (editing.id) await apiClient.put(`/api/journal/${editing.id}`, payload);
-    else await apiClient.post('/api/journal', payload);
+    if (editing.id) await updateEntry(editing.id, payload);
+    else await createEntry(payload);
     setEditing(null);
     loadJournal();
   };
 
-  const deleteEntry = async () => {
+  const removeEntry = async () => {
     if (!editing?.id) return;
-    await apiClient.delete(`/api/journal/${editing.id}`);
+    await deleteEntry(editing.id);
     setEditing(null);
     loadJournal();
   };
@@ -197,7 +197,7 @@ export default function Analytics() {
             <div className="flex gap-2 justify-end">
               <button className="btn bg-zinc-700" onClick={() => setEditing((p) => ({ ...p, body: `${p.body || ''}\n\n### AI Summary\n- ${((p.body || '').slice(0, 140) || 'No content')}...` }))}>AI Summarize</button>
               <button className="btn bg-emerald-600" onClick={saveEntry}>Save</button>
-              <button className="btn bg-red-600" onClick={deleteEntry}>Delete</button>
+              <button className="btn bg-red-600" onClick={removeEntry}>Delete</button>
               <button className="btn bg-zinc-700" onClick={() => setEditing(null)}>Close</button>
             </div>
           </div>

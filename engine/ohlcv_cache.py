@@ -1,28 +1,45 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 import httpx
 
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
+log = logging.getLogger(__name__)
 
 HTF_MAP = {
     "1m": "5m",
+    "3m": "15m",
     "5m": "1h",
     "15m": "1h",
     "30m": "1h",
     "1h": "4h",
+    "2h": "4h",
     "4h": "1d",
+    "6h": "1d",
+    "12h": "1d",
     "1d": "1w",
 }
 
-_CACHE: dict[tuple[str, str, int], tuple[float, list[dict[str, Any]]]] = {}
-_TTL_S = 25
+_cache: dict[str, dict[str, Any]] = {}
+_CACHE_TTL = 25
 
 
 def get_htf(timeframe) -> str:
     return HTF_MAP.get(timeframe, "1d")
+
+
+def _cache_key(pair: str, timeframe: str, limit: int) -> str:
+    return f"{pair}:{timeframe}:{limit}"
+
+
+def _is_fresh(key: str) -> bool:
+    entry = _cache.get(key)
+    if not entry:
+        return False
+    return (time.time() - float(entry["ts"])) < _CACHE_TTL
 
 
 def _to_rows(raw: list[list[Any]]) -> list[dict[str, Any]]:
@@ -42,19 +59,21 @@ def _to_rows(raw: list[list[Any]]) -> list[dict[str, Any]]:
 
 
 async def fetch_candles(pair, timeframe, limit=100) -> list:
-    key = (pair, timeframe, int(limit))
-    now = time.time()
-    cached = _CACHE.get(key)
-    if cached and now - cached[0] < _TTL_S:
-        return cached[1]
+    key = _cache_key(str(pair).upper(), timeframe, int(limit))
+    if _is_fresh(key):
+        return _cache[key]["data"]
     try:
         async with httpx.AsyncClient(timeout=10.0) as c:
-            r = await c.get(BINANCE_KLINES, params={"symbol": pair, "interval": timeframe, "limit": limit})
+            r = await c.get(BINANCE_KLINES, params={"symbol": str(pair).upper(), "interval": timeframe, "limit": int(limit)})
             r.raise_for_status()
             rows = _to_rows(r.json() or [])
-            _CACHE[key] = (now, rows)
+            _cache[key] = {"data": rows, "ts": time.time()}
             return rows
+    except httpx.TimeoutException:
+        log.warning("OHLCV timeout: %s %s", pair, timeframe)
+        return []
     except Exception:
+        log.exception("OHLCV fetch failed for %s %s", pair, timeframe)
         return []
 
 
@@ -67,7 +86,7 @@ async def fetch_candles_range(pair, timeframe, start_ms, end_ms) -> list:
                 r = await c.get(
                     BINANCE_KLINES,
                     params={
-                        "symbol": pair,
+                        "symbol": str(pair).upper(),
                         "interval": timeframe,
                         "startTime": cursor,
                         "endTime": end_ms,
@@ -83,5 +102,6 @@ async def fetch_candles_range(pair, timeframe, start_ms, end_ms) -> list:
                 if len(batch) < 1000:
                     break
     except Exception:
+        log.exception("OHLCV range fetch failed for %s %s", pair, timeframe)
         return []
     return out

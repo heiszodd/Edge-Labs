@@ -1,57 +1,174 @@
-import { useState } from 'react';
-import { DragDropContext, Draggable, Droppable } from 'react-beautiful-dnd';
-import TierGuard from '../components/common/TierGuard';
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import CandlestickChart from '../components/charts/CandlestickChart';
+import ModelCard from '../components/models/ModelCard';
+import SignalCard from '../components/signals/SignalCard';
+import TierGuard from '../components/common/TierGuard';
+import {
+  createModel,
+  depositDemo,
+  getDemoBalance,
+  getModels,
+  getPending,
+  getRisk,
+  resetDemo,
+  runScanner,
+  updateRisk,
+} from '../api/perps';
+import { executeDemo, executeLive } from '../api/signals';
 
-const tabs = ['Overview', 'Positions', 'Orders', 'Scanner', 'Models', 'Pending', 'Demo', 'Risk'];
-const initial = { available: ['BOS confirm', 'Liquidity sweep', 'FVG reclaim'], phase1: [], phase2: [], phase3: [], phase4: [] };
-
-function ModelBuilder() {
-  const [state, setState] = useState(initial);
-  const onDragEnd = ({ source, destination }) => {
-    if (!destination) return;
-    const sourceItems = [...state[source.droppableId]];
-    const [moved] = sourceItems.splice(source.index, 1);
-    const destItems = source.droppableId === destination.droppableId ? sourceItems : [...state[destination.droppableId]];
-    destItems.splice(destination.index, 0, moved);
-    setState({ ...state, [source.droppableId]: sourceItems, [destination.droppableId]: destItems });
-  };
-  return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <div className="grid md:grid-cols-5 gap-3">
-        {Object.keys(state).map((key) => (
-          <Droppable droppableId={key} key={key}>
-            {(provided) => (
-              <div className="card min-h-40" ref={provided.innerRef} {...provided.droppableProps}>
-                <h4 className="font-medium mb-2 capitalize">{key}</h4>
-                {state[key].map((r, idx) => (
-                  <Draggable draggableId={`${key}-${r}-${idx}`} index={idx} key={`${key}-${r}-${idx}`}>
-                    {(drag) => <div ref={drag.innerRef} {...drag.draggableProps} {...drag.dragHandleProps} className="bg-zinc-700 rounded p-2 mb-2 text-sm">{r}</div>}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
-              </div>
-            )}
-          </Droppable>
-        ))}
-      </div>
-    </DragDropContext>
-  );
-}
+const tabs = ['Overview', 'Scanner', 'Models', 'Pending', 'Demo', 'Risk'];
 
 export default function Perps() {
   const [tab, setTab] = useState('Overview');
+  const [newModel, setNewModel] = useState({ name: '', pair: 'BTCUSDT', timeframe: '1h' });
+  const [demoAmount, setDemoAmount] = useState(500);
+  const [riskForm, setRiskForm] = useState({
+    max_risk_pct: 1,
+    daily_loss_limit: 200,
+    max_positions: 5,
+    max_leverage: 10,
+    max_daily_trades: 10,
+  });
+  const qc = useQueryClient();
+
+  const modelsQ = useQuery({ queryKey: ['perps', 'models'], queryFn: getModels, staleTime: 30_000 });
+  const pendingQ = useQuery({ queryKey: ['perps', 'pending'], queryFn: getPending, staleTime: 30_000, refetchOnWindowFocus: true });
+  const demoQ = useQuery({ queryKey: ['perps', 'demo'], queryFn: getDemoBalance, staleTime: 30_000 });
+  const riskQ = useQuery({ queryKey: ['perps', 'risk'], queryFn: getRisk, staleTime: 30_000 });
+
+  useEffect(() => {
+    if (riskQ.data) setRiskForm((prev) => ({ ...prev, ...riskQ.data }));
+  }, [riskQ.data]);
+
+  const scannerM = useMutation({
+    mutationFn: runScanner,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'pending'] }),
+  });
+  const createModelM = useMutation({
+    mutationFn: createModel,
+    onSuccess: () => {
+      setNewModel({ name: '', pair: 'BTCUSDT', timeframe: '1h' });
+      qc.invalidateQueries({ queryKey: ['perps', 'models'] });
+    },
+  });
+  const depositM = useMutation({
+    mutationFn: depositDemo,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'demo'] }),
+  });
+  const resetM = useMutation({
+    mutationFn: resetDemo,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'demo'] }),
+  });
+  const saveRiskM = useMutation({
+    mutationFn: updateRisk,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'risk'] }),
+  });
+  const execLiveM = useMutation({
+    mutationFn: executeLive,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'pending'] }),
+  });
+  const execDemoM = useMutation({
+    mutationFn: executeDemo,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['perps', 'pending'] });
+      qc.invalidateQueries({ queryKey: ['perps', 'demo'] });
+    },
+  });
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <h1 className="text-2xl font-semibold">Perps</h1>
-      <div className="flex flex-wrap gap-2">{tabs.map((t) => <button key={t} className={`btn ${tab === t ? 'bg-violet-500' : 'bg-zinc-800'}`} onClick={() => setTab(t)}>{t}</button>)}</div>
-      {tab === 'Overview' && <div className="grid md:grid-cols-2 gap-4"><div className="card">HL Account: Balance $13,221 · Margin Used $1,030 · uPnL +$222</div><CandlestickChart /></div>}
-      {tab === 'Positions' && <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Coin</th><th>Side</th><th>uPnL</th><th>Actions</th></tr></thead><tbody><tr><td>BTC</td><td>Long</td><td className="text-emerald-500">+3.1%</td><td className="space-x-2"><button className="btn bg-zinc-700">Close 25%</button><button className="btn bg-zinc-700">Close 50%</button><button className="btn bg-red-500">Close All</button></td></tr></tbody></table></div>}
-      {tab === 'Scanner' && <TierGuard tier="pro"><div className="card"><button className="btn bg-violet-500">▶️ Run Scanner</button><p className="text-zinc-400 mt-2">Recent signals available.</p></div></TierGuard>}
-      {tab === 'Models' && <div className="space-y-3"><div className="card">Model list + create/edit actions</div><ModelBuilder /></div>}
-      {tab === 'Pending' && <div className="card">Signal cards (Phase 3+/4) with execute/demo/dismiss.</div>}
-      {tab === 'Demo' && <div className="card">Demo Panel: balance, deposit, reset, open trades, history.</div>}
-      {tab === 'Risk' && <div className="card">Risk sliders and warning thresholds.</div>}
+      <div className="tab-bar">
+        {tabs.map((item) => (
+          <button key={item} className={`tab ${tab === item ? 'active' : ''}`} onClick={() => setTab(item)}>
+            {item}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'Overview' && (
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="card-glass">
+            <p className="text-sm text-[var(--text-muted)]">Account</p>
+            <p className="text-lg font-semibold">Demo + Live monitor</p>
+          </div>
+          <CandlestickChart />
+        </div>
+      )}
+
+      {tab === 'Scanner' && (
+        <TierGuard tier="pro">
+          <div className="card space-y-3">
+            <button className="btn-primary" onClick={() => scannerM.mutate()} disabled={scannerM.isPending}>
+              {scannerM.isPending ? 'Running...' : 'Run Scanner'}
+            </button>
+            <p className="text-sm text-[var(--text-muted)]">Triggers perps scanner queue and refreshes pending signals.</p>
+          </div>
+        </TierGuard>
+      )}
+
+      {tab === 'Models' && (
+        <div className="space-y-4">
+          <div className="card grid md:grid-cols-4 gap-2">
+            <input className="input" placeholder="Model name" value={newModel.name} onChange={(e) => setNewModel((p) => ({ ...p, name: e.target.value }))} />
+            <input className="input" placeholder="Pair" value={newModel.pair} onChange={(e) => setNewModel((p) => ({ ...p, pair: e.target.value.toUpperCase() }))} />
+            <input className="input" placeholder="Timeframe" value={newModel.timeframe} onChange={(e) => setNewModel((p) => ({ ...p, timeframe: e.target.value }))} />
+            <button
+              className="btn-primary"
+              disabled={createModelM.isPending || !newModel.name}
+              onClick={() => createModelM.mutate({ ...newModel, active: false })}
+            >
+              {createModelM.isPending ? 'Saving...' : 'Save Model'}
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            {(modelsQ.data || []).map((model) => <ModelCard key={model.id} model={model} />)}
+          </div>
+        </div>
+      )}
+
+      {tab === 'Pending' && (
+        <div className="grid md:grid-cols-2 gap-4">
+          {(pendingQ.data || []).map((signal) => (
+            <SignalCard
+              key={signal.id}
+              signal={signal}
+              onExecute={(s) => (s.phase === 4 ? execLiveM.mutate(s.id) : execDemoM.mutate(s.id))}
+            />
+          ))}
+        </div>
+      )}
+
+      {tab === 'Demo' && (
+        <div className="card space-y-3">
+          <p className="text-sm text-[var(--text-muted)]">Balance: <span className="text-[var(--text-primary)]">{demoQ.data?.balance ?? 0}</span></p>
+          <div className="flex gap-2">
+            <input className="input max-w-40" type="number" value={demoAmount} onChange={(e) => setDemoAmount(Number(e.target.value || 0))} />
+            <button className="btn-success" onClick={() => depositM.mutate(Number(demoAmount))} disabled={depositM.isPending}>Deposit</button>
+            <button className="btn-danger" onClick={() => resetM.mutate()} disabled={resetM.isPending}>Reset</button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'Risk' && (
+        <div className="card grid md:grid-cols-2 gap-3">
+          {Object.keys(riskForm).map((key) => (
+            <label key={key} className="text-sm">
+              <span className="block mb-1 text-[var(--text-muted)]">{key}</span>
+              <input
+                className="input"
+                type="number"
+                value={riskForm[key]}
+                onChange={(e) => setRiskForm((p) => ({ ...p, [key]: Number(e.target.value || 0) }))}
+              />
+            </label>
+          ))}
+          <button className="btn-primary md:col-span-2" onClick={() => saveRiskM.mutate(riskForm)} disabled={saveRiskM.isPending || riskQ.isLoading}>
+            {saveRiskM.isPending ? 'Saving...' : 'Save Risk Settings'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

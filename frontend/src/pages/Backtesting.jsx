@@ -14,7 +14,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import apiClient from '../api/client';
+import { createModel, getModels } from '../api/perps';
+import { getBacktestRun, runBacktest as runBacktestApi } from '../api/backtesting';
 import TierGuard from '../components/common/TierGuard';
 
 const timeframeOptions = ['15m', '1h', '4h', '1d'];
@@ -64,8 +65,7 @@ export default function Backtesting() {
   const [sortBy, setSortBy] = useState('entry_time');
 
   useEffect(() => {
-    apiClient.get('/api/perps/models').then((res) => {
-      const nextModels = res?.data?.data || [];
+    getModels().then((nextModels) => {
       setModels(nextModels);
       if (nextModels.length && !form.model_id) {
         setForm((prev) => ({ ...prev, model_id: nextModels[0].id }));
@@ -90,11 +90,11 @@ export default function Backtesting() {
     setResult(null);
     try {
       const payload = { ...form, model_id: Number(form.model_id), capital: Number(form.capital) };
-      const run = await apiClient.post('/api/backtest/run', payload);
-      const nextRunId = run?.data?.data?.run_id;
+      const run = await runBacktestApi(payload);
+      const nextRunId = run?.run_id;
       setRunId(nextRunId);
-      const poll = await apiClient.get(`/api/backtest/${nextRunId}`);
-      setResult(poll?.data?.data || null);
+      const poll = await getBacktestRun(nextRunId);
+      setResult(poll || null);
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ export default function Backtesting() {
 
   const saveStrategy = async () => {
     const rules = Object.values(zones).flat().map((rule) => rule.id);
-    await apiClient.post('/api/perps/models', {
+    await createModel({
       name: `Custom Strategy ${new Date().toISOString().slice(0, 10)}`,
       section: 'perps',
       rules,

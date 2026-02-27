@@ -29,14 +29,15 @@ app = FastAPI(title='Trading Intelligence Platform API')
 DEFAULT_ALLOWED_ORIGINS = [
     "https://edgelabs-five.vercel.app",
     "http://localhost:5173",
+    "http://localhost:3000",
 ]
 
 allowed_origins = list(dict.fromkeys((FRONTEND_URLS or []) + DEFAULT_ALLOWED_ORIGINS))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if ALLOW_ALL_CORS else allowed_origins,
-    allow_origin_regex=CORS_ORIGIN_REGEX,
+    allow_origins=allowed_origins,
+    allow_origin_regex=CORS_ORIGIN_REGEX if not ALLOW_ALL_CORS else None,
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],

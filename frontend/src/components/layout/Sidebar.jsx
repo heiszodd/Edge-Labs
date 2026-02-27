@@ -1,37 +1,69 @@
 import { Link, useLocation } from 'react-router-dom';
-import TelegramLink from '../common/TelegramLink';
-import useAuth from '../../hooks/useAuth';
+import { useAuthStore } from '../../store/authStore';
+import ThemeToggle from '../common/ThemeToggle';
 
-const nav = [
-  ['/', 'Home'],
-  ['/perps', 'Perps'],
-  ['/degen', 'Degen'],
-  ['/predictions', 'Predictions'],
-  ['/analytics', 'Analytics'],
-  ['/backtesting', 'Backtesting'],
-  ['/journal', 'Journal'],
-  ['/settings', 'Settings'],
-  ['/subscription', 'Subscription'],
+const NAV = [
+  { href: '/', icon: '🏠', label: 'Overview' },
+  { href: '/perps', icon: '📈', label: 'Perps' },
+  { href: '/degen', icon: '🔥', label: 'Degen' },
+  { href: '/predictions', icon: '🎯', label: 'Predictions' },
+  { href: '/backtesting', icon: '🔬', label: 'Backtest' },
+  { href: '/analytics', icon: '📊', label: 'Analytics' },
+  { href: '/settings', icon: '⚙️', label: 'Settings' },
 ];
 
-export default function Sidebar() {
-  const { pathname } = useLocation();
-  const { tier } = useAuth();
+export default function Sidebar({ collapsed, onToggle }) {
+  const loc = useLocation();
+  const user = useAuthStore((s) => s.user);
+  const tier = useAuthStore((s) => s.tier);
+
+  const tierColor = {
+    free: 'bg-warm-500/20 text-warm-400',
+    pro: 'bg-signal-500/20 text-signal-400',
+    premium: 'bg-amber-500/20 text-amber-400',
+  }[tier] || '';
 
   return (
-    <aside className="hidden md:flex w-64 border-r border-zinc-700 bg-zinc-900 p-4 flex-col gap-4">
-      <h1 className="text-xl font-semibold">Edge Labs</h1>
-      <span className="inline-flex w-fit px-2 py-1 rounded bg-violet-500/20 text-violet-300 text-xs uppercase">{tier}</span>
-      <nav className="space-y-2">
-        {nav.map(([to, label]) => (
-          <Link key={to} to={to} className={`block px-3 py-2 rounded ${pathname === to ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800'}`}>
-            {label}
-          </Link>
-        ))}
-      </nav>
-      <div className="mt-auto">
-        <TelegramLink />
+    <div className="flex flex-col h-full px-3 py-5 gap-2">
+      <div className={`flex items-center mb-4 px-2 ${collapsed ? 'justify-center' : 'justify-between'}`}>
+        {!collapsed && <span className="font-semibold text-sm text-[var(--text-primary)]">TradeIntel</span>}
+        <button onClick={onToggle} className="btn-ghost p-1.5 rounded-xl text-xs">
+          {collapsed ? '→' : '←'}
+        </button>
       </div>
-    </aside>
+
+      <nav className="flex flex-col gap-1 flex-1">
+        {NAV.map((item) => {
+          const active = loc.pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              to={item.href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 ${collapsed ? 'justify-center' : ''} ${active ? 'bg-signal-500/10 text-signal-400' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'}`}
+              title={collapsed ? item.label : ''}
+            >
+              <span className="text-base flex-shrink-0">{item.icon}</span>
+              {!collapsed && <span>{item.label}</span>}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {!collapsed && (
+        <div className="mt-auto">
+          <div className="card p-3 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-signal-500/20 flex items-center justify-center text-sm font-semibold text-signal-400">
+              {user?.username?.[0]?.toUpperCase() || '?'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-[var(--text-primary)] truncate">{user?.username || user?.email}</p>
+              <span className={`badge text-[10px] px-1.5 py-0.5 ${tierColor}`}>{tier}</span>
+            </div>
+            <ThemeToggle />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
+

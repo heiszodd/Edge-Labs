@@ -1,28 +1,45 @@
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-
-const wallets = [
-  { chain: 'HL', balance: '$12,430', connected: true },
-  { chain: 'SOL', balance: '$2,100', connected: false },
-  { chain: 'Poly', balance: '$780', connected: true },
-];
+import StatCard from '../components/common/StatCard';
+import { getPending } from '../api/signals';
+import { getWalletStatus } from '../api/wallets';
+import { useAuthStore } from '../store/authStore';
 
 export default function Dashboard() {
+  const user = useAuthStore((s) => s.user);
+  const tier = useAuthStore((s) => s.tier);
+  const { data: signals = [], isLoading: signalsLoading } = useQuery({
+    queryKey: ['signals', 'pending'],
+    queryFn: getPending,
+    staleTime: 30_000,
+  });
+  const { data: wallets = {}, isLoading: walletLoading } = useQuery({
+    queryKey: ['wallets', 'status'],
+    queryFn: getWalletStatus,
+    staleTime: 30_000,
+  });
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Overview</h1>
-      <div className="grid md:grid-cols-3 gap-4">
-        {wallets.map((w) => <div key={w.chain} className="card"><div className="text-zinc-400">{w.chain}</div><div className="text-xl">{w.balance}</div><div className={w.connected ? 'text-emerald-500' : 'text-red-500'}>{w.connected ? 'Connected' : 'Disconnected'}</div></div>)}
-      </div>
-      <div className="grid md:grid-cols-3 gap-4">
-        <div className="card">Today PnL: <span className="text-emerald-500">+$450</span></div>
-        <Link to="/perps" className="card">Pending signals: <span className="bg-violet-500 rounded px-2 ml-2">3</span></Link>
-        <div className="card">Active models: Perps 4 · Degen 3 · Predictions 2</div>
-      </div>
-      <div className="flex gap-2">
-        <Link className="btn bg-zinc-800" to="/perps">📈 Go to Perps</Link>
-        <Link className="btn bg-zinc-800" to="/degen">🔥 Go to Degen</Link>
-        <Link className="btn bg-zinc-800" to="/predictions">🎯 Predictions</Link>
-      </div>
+    <div className="space-y-8">
+      <section className="card-glass">
+        <div className="text-sm text-[var(--text-muted)]">Welcome back</div>
+        <h1 className="text-3xl font-semibold">{user?.username || user?.email || 'Trader'}</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Tier: <span className="badge-signal">{tier}</span></p>
+      </section>
+
+      <section className="grid md:grid-cols-4 gap-4">
+        <StatCard label="Pending Signals" value={signals.length} icon="⚡" loading={signalsLoading} />
+        <StatCard label="Perps Wallet" value={wallets?.perps?.connected ? 'Connected' : 'Not connected'} icon="📈" loading={walletLoading} />
+        <StatCard label="Degen Wallet" value={wallets?.degen?.connected ? 'Connected' : 'Not connected'} icon="🔥" loading={walletLoading} />
+        <StatCard label="Prediction Wallet" value={wallets?.predictions?.connected ? 'Connected' : 'Not connected'} icon="🎯" loading={walletLoading} />
+      </section>
+
+      <section className="grid md:grid-cols-3 gap-4">
+        <Link to="/perps" className="card">Go to Perps</Link>
+        <Link to="/degen" className="card">Go to Degen</Link>
+        <Link to="/predictions" className="card">Go to Predictions</Link>
+      </section>
     </div>
   );
 }
+
