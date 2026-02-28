@@ -3,7 +3,7 @@ import { useAuthStore } from '../../store/authStore';
 import ThemeToggle from '../common/ThemeToggle';
 
 const NAV = [
-  { href: '/', icon: 'O', label: 'Overview' },
+  { href: '/dashboard', icon: 'O', label: 'Overview' },
   { href: '/perps', icon: 'P', label: 'Perps' },
   { href: '/degen', icon: 'D', label: 'Degen' },
   { href: '/predictions', icon: 'R', label: 'Predictions' },

@@ -13,6 +13,7 @@ from backend.api.auth import router as auth_router
 from backend.api.backtesting import router as backtesting_router
 from backend.api.degen import router as degen_router
 from backend.api.journal import router as journal_router
+from backend.api.overview import router as overview_router
 from backend.api.payments import router as payments_router
 from backend.api.perps import router as perps_router
 from backend.api.predictions import router as predictions_router
@@ -59,6 +60,10 @@ def startup_event():
         bootstrap_admin()
     except Exception:
         logger.exception("Admin bootstrap failed")
+    try:
+        db.migrate_hl_addresses()
+    except Exception:
+        logger.exception("HL address migration failed")
 
 
 def bootstrap_admin():
@@ -151,3 +156,4 @@ app.include_router(alerts_router)
 app.include_router(journal_router)
 app.include_router(payments_router)
 app.include_router(users_router)
+app.include_router(overview_router)

@@ -16,7 +16,7 @@ from backend.dependencies import get_current_user, require_tier
 from engine.degen.contract_scanner import scan_contract
 from engine.solana.executor import execute_jupiter_swap
 from engine.solana.trenches_feed import run_degen_scanner_for_user
-from engine.solana.wallet_reader import get_wallet_summary
+from engine.solana.wallet_reader import get_sol_price_usd, get_wallet_summary
 
 router = APIRouter(prefix="/api/degen", tags=["degen"])
 log = logging.getLogger(__name__)
@@ -79,6 +79,12 @@ async def balance(user: dict = Depends(get_current_user)):
 @router.get("/positions")
 def positions(user: dict = Depends(get_current_user)):
     return ok(db.get_open_sol_positions(user["id"]))
+
+
+@router.get("/sol-price")
+async def get_sol_price(user: dict = Depends(get_current_user)):
+    price = await get_sol_price_usd()
+    return ok({"sol_price_usd": price, "source": "jupiter", "fetched_at": datetime.utcnow().isoformat()})
 
 
 @router.post("/scan-contract")

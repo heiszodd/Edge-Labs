@@ -59,11 +59,13 @@
 
 @layer components {
   .card {
-    @apply rounded-3xl border bg-[var(--bg-card)] border-[var(--border)] shadow-warm-sm p-5 transition-all duration-300;
+    @apply rounded-3xl border bg-[var(--bg-card)] border-[var(--border)] shadow-warm-sm p-5;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, border-color 0.3s ease;
   }
 
   .card:hover {
     @apply shadow-warm-md border-[var(--border-hover)];
+    transform: translateY(-3px);
   }
 
   .card-glass {
@@ -172,6 +174,7 @@
   .tab {
     @apply flex-1 rounded-xl px-4 py-2 text-sm font-medium text-[var(--text-muted)] transition-all duration-200 cursor-pointer;
     min-width: max-content;
+    min-height: 44px;
   }
 
   .tab.active {
@@ -219,7 +222,12 @@
   }
 
   .modal {
-    @apply card w-full max-w-lg animate-scale-in max-h-[90vh] overflow-y-auto;
+    @apply card w-full max-w-lg animate-scale-in max-h-[90vh] overflow-y-auto md:rounded-3xl rounded-t-3xl md:my-4 mt-auto;
+  }
+
+  .grid-section {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -232,9 +240,37 @@
   }
   .modal {
     max-height: 94vh;
-    @apply rounded-2xl;
+    @apply rounded-t-3xl rounded-b-none;
   }
   .tab {
     @apply text-xs px-3;
+  }
+  .text-xs {
+    font-size: 12px;
+  }
+  .stat-value {
+    font-size: 20px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+@media (min-width: 640px) {
+  .grid-section {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  input,
+  select,
+  textarea {
+    font-size: 13px !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-section {
+    grid-template-columns: repeat(3, 1fr);
   }
 }

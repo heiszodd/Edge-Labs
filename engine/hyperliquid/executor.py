@@ -4,7 +4,7 @@ from backend import db
 
 
 def _get_exchange(user_id: str):
-    key = db.get_encrypted_key(user_id, "hl_api_key")
+    key = db.get_encrypted_key(user_id, "hl_pk")
     return {"ready": bool(key)}
 
 

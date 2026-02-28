@@ -5,6 +5,7 @@ import ModelCard from '../components/models/ModelCard';
 import AdvancedModelBuilder from '../components/models/AdvancedModelBuilder';
 import SignalCard from '../components/signals/SignalCard';
 import TierGuard from '../components/common/TierGuard';
+import { PageWrapper } from '../components/common/PageWrapper';
 import {
   clearDemoLogs,
   createModel,
@@ -45,6 +46,8 @@ export default function Perps() {
   });
   const [selectedModelIds, setSelectedModelIds] = useState([]);
   const [selectedPairs, setSelectedPairs] = useState([]);
+  const [scanResults, setScanResults] = useState(null);
+  const [scanError, setScanError] = useState('');
   const qc = useQueryClient();
 
   const accountQ = useQuery({ queryKey: ['perps', 'account'], queryFn: () => getAccount(7), refetchInterval: 7000 });
@@ -75,7 +78,15 @@ export default function Perps() {
 
   const scannerM = useMutation({
     mutationFn: runScanner,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['perps', 'pending'] }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['perps', 'pending'] });
+      setScanResults(data);
+      setScanError('');
+    },
+    onError: (err) => {
+      setScanError(err?.response?.data?.detail || 'Scanner failed. Check if models are active.');
+      setScanResults(null);
+    },
   });
   const createModelM = useMutation({
     mutationFn: createModel,
@@ -122,7 +133,7 @@ export default function Perps() {
   }, [healthQ.data, healthQ.isFetching]);
 
   return (
-    <div className="space-y-5">
+    <PageWrapper className="space-y-5">
       <h1 className="text-2xl font-semibold">Perps</h1>
       <div className="tab-bar">
         {tabs.map((item) => (
@@ -139,7 +150,19 @@ export default function Perps() {
               <p className="text-sm text-[var(--text-muted)]">Hyperliquid Account</p>
               <span className={`badge ${healthBadge[0]}`}>{healthBadge[1]}</span>
             </div>
-            {accountQ.data?.error && <div className="badge badge-danger">{accountQ.data.error.detail}</div>}
+            {!accountQ.data?.connected && (
+              <div className="card !p-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🔌</span>
+                  <div>
+                    <p className="font-semibold">No wallet connected</p>
+                    <p className="text-sm text-[var(--text-muted)]">{accountQ.data?.message || 'Connect in Settings -> Wallets'}</p>
+                  </div>
+                  <a href="/settings" className="btn-primary btn-sm ml-auto">Connect</a>
+                </div>
+              </div>
+            )}
+            {accountQ.data?.error && <div className="badge badge-danger">{accountQ.data.error}</div>}
             {accountQ.data?.error?.response_body && (
               <pre className="text-xs text-danger bg-[var(--bg-secondary)] p-2 rounded-xl overflow-auto">
                 {String(accountQ.data.error.response_body).slice(0, 500)}
@@ -242,23 +265,47 @@ export default function Perps() {
             </div>
             <button
               className="btn-primary"
-              onClick={() => scannerM.mutate({
-                model_ids: selectedModelIds,
-                pairs: selectedPairs,
-                include_all_models: selectedModelIds.length === 0,
-                include_all_pairs: selectedPairs.length === 0,
-              })}
-              disabled={scannerM.isPending || ((modelsQ.data || []).length > 0 && selectedModelIds.length === 0)}
+              onClick={() => {
+                setScanResults(null);
+                setScanError('');
+                scannerM.mutate({
+                  model_ids: selectedModelIds,
+                  pairs: selectedPairs,
+                  include_all_models: selectedModelIds.length === 0,
+                  include_all_pairs: selectedPairs.length === 0,
+                });
+              }}
+              disabled={scannerM.isPending}
             >
-              {scannerM.isPending ? 'Running...' : 'Run Scanner'}
+              {scannerM.isPending ? 'Scanning...' : 'Run Scanner'}
             </button>
             <p className="text-sm text-[var(--text-muted)]">Runs selected models and selected pairs, then returns structured signal strength and scan timestamp.</p>
-            {scannerM.data?.results?.length > 0 && (
-              <div className="text-xs space-y-1">
-                {scannerM.data.results.map((r) => <div key={r.id}>{r.pair} score {r.signal_strength} @ {r.timestamp}</div>)}
+            {scanError && <div className="card border-rose-500/20 bg-rose-500/5"><p className="text-rose-400 text-sm">❌ {scanError}</p></div>}
+            {scanResults && (
+              <div className="space-y-3 animate-fade-in">
+                <div className="card">
+                  <p className="font-semibold">{scanResults.signals_found > 0 ? `🎯 ${scanResults.signals_found} signal(s) found` : '📊 Scan complete - no Phase 4 signals'}</p>
+                  <p className="text-sm text-[var(--text-muted)]">{scanResults.message}</p>
+                </div>
+                {(scanResults.results || []).map((r, i) => (
+                  <div key={i} className="card !p-3 text-sm">
+                    <div className="flex justify-between">
+                      <p className="font-medium">{r.model} · {r.pair} · {r.timeframe}</p>
+                      <span className={`badge ${r.passed ? 'badge-success' : 'badge-warning'}`}>P{r.phase_reached || 0}</span>
+                    </div>
+                    <p className="text-xs text-[var(--text-muted)]">Grade {r.quality_grade} · Score {r.quality_score} · {r.direction}</p>
+                    {r.error && <p className="text-xs text-danger">{r.error}</p>}
+                  </div>
+                ))}
               </div>
             )}
-            {scannerM.error && <div className="badge badge-danger">{scannerM.error?.response?.data?.detail || 'Scan failed'}</div>}
+            {!scanResults && !scannerM.isPending && !scanError && (
+              <div className="card text-center py-10">
+                <p className="text-3xl mb-2">📡</p>
+                <p className="font-medium">No scan run yet</p>
+                <p className="text-sm text-[var(--text-muted)]">Click Run Scanner to evaluate active models.</p>
+              </div>
+            )}
           </div>
         </TierGuard>
       )}
@@ -359,6 +406,6 @@ export default function Perps() {
           </div>
         </div>
       )}
-    </div>
+    </PageWrapper>
   );
 }

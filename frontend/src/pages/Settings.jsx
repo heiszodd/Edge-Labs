@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { connectWallet, getWalletStatus } from '../api/wallets';
-import { generateTelegramLinkCode, getSettings, saveSettings, unlinkTelegram } from '../api/users';
+import { getSettings, saveSettings } from '../api/users';
 import { saveAlertSettings } from '../api/alerts';
 import apiClient from '../api/client';
+import TelegramLogin from '../components/common/TelegramLogin';
+import { PageWrapper } from '../components/common/PageWrapper';
 
 export default function Settings() {
   const [wallet, setWallet] = useState({ chain: 'hl', raw_key_or_seed: '', wallet_address: '' });
@@ -50,17 +52,14 @@ export default function Settings() {
   });
   const savePresetsM = useMutation({ mutationFn: saveSettings, onSuccess: () => qc.invalidateQueries({ queryKey: ['users', 'settings'] }) });
   const saveAlertsM = useMutation({ mutationFn: saveAlertSettings });
-  const tgLinkM = useMutation({
-    mutationFn: generateTelegramLinkCode,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['auth', 'me'] }),
-  });
   const tgUnlinkM = useMutation({
-    mutationFn: unlinkTelegram,
+    mutationFn: () => apiClient.post('/api/auth/telegram/disconnect').then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['auth', 'me'] }),
   });
+  const [telegramMessage, setTelegramMessage] = useState('');
 
   return (
-    <div className="space-y-4">
+    <PageWrapper className="space-y-4">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
       <div className="card space-y-3">
@@ -113,19 +112,27 @@ export default function Settings() {
           Status: {meQ.data?.telegram_linked ? 'Linked' : 'Not Linked'}
           {meQ.data?.telegram_username ? ` (@${meQ.data.telegram_username})` : ''}
         </p>
-        <p className="text-xs text-[var(--text-muted)]">
-          1) Generate code 2) Send code to the Telegram bot 3) Bot verifies and links your account. Codes expire in 10 minutes.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-primary" onClick={() => tgLinkM.mutate()} disabled={tgLinkM.isPending}>
-            {tgLinkM.isPending ? 'Generating...' : 'Generate Verification Code'}
-          </button>
-          <button className="btn-danger" onClick={() => tgUnlinkM.mutate()} disabled={tgUnlinkM.isPending || !meQ.data?.telegram_linked}>
-            Unlink Telegram
-          </button>
+        <div className="space-y-3">
+          {!meQ.data?.telegram_linked && (
+            <>
+              <p className="text-sm text-[var(--text-muted)]">Authorize with Telegram login widget to verify ownership and receive alerts.</p>
+              <TelegramLogin
+                onSuccess={(data) => {
+                  setTelegramMessage(`Connected to @${data?.telegram_username || 'telegram'}`);
+                  qc.invalidateQueries({ queryKey: ['auth', 'me'] });
+                }}
+                onError={(msg) => setTelegramMessage(msg)}
+              />
+            </>
+          )}
+          {meQ.data?.telegram_linked && (
+            <button className="btn-danger" onClick={() => tgUnlinkM.mutate()} disabled={tgUnlinkM.isPending}>
+              Disconnect Telegram
+            </button>
+          )}
+          {telegramMessage && <div className="badge badge-info">{telegramMessage}</div>}
         </div>
-        {tgLinkM.data?.token && <div className="badge badge-info">Verification Code: {tgLinkM.data.token}</div>}
       </div>
-    </div>
+    </PageWrapper>
   );
 }

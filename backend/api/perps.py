@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backend import db
@@ -124,41 +125,17 @@ def _normalize_fill(fill: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _load_hl_account(uid: str) -> dict[str, Any]:
-    address = db.get_hl_address(uid)
-    key = db.get_encrypted_key(uid, "hl_pk")
-    if not address:
-        return {
-            "connected": False,
-            "hl_address": "",
-            "equity": 0.0,
-            "available": 0.0,
-            "margin_used": 0.0,
-            "error": {"reason": "missing_wallet", "detail": "Hyperliquid wallet not connected"},
-        }
-    if not key:
-        return {
-            "connected": False,
-            "hl_address": address,
-            "equity": 0.0,
-            "available": 0.0,
-            "margin_used": 0.0,
-            "error": {"reason": "invalid_api_keys", "detail": "Hyperliquid private key missing"},
-        }
-    summary, failure = await fetch_account_summary(address)
+    summary = await fetch_account_summary(uid)
+    if summary.get("error") == "no_address":
+        return {"connected": False, "message": "Connect your Hyperliquid wallet in Settings", "accountValue": 0.0}
+    if summary.get("error"):
+        return {"connected": False, "error": summary.get("error"), "message": summary.get("message", "Hyperliquid unavailable"), "accountValue": 0.0}
     return {
-        "connected": failure is None,
-        "hl_address": address,
-        "equity": summary.get("account_value", 0.0),
-        "available": summary.get("available", 0.0),
-        "margin_used": summary.get("margin_used", 0.0),
-        "error": None
-        if failure is None
-        else {
-            "reason": failure.reason,
-            "detail": failure.detail,
-            "status_code": failure.status_code,
-            "response_body": failure.response_body,
-        },
+        "connected": True,
+        "hl_address": summary.get("hl_address", ""),
+        "equity": summary.get("accountValue", 0.0),
+        "available": summary.get("availableMargin", 0.0),
+        "margin_used": summary.get("totalMarginUsed", 0.0),
     }
 
 
@@ -175,31 +152,30 @@ async def get_account(
     user: dict = Depends(get_current_user),
 ):
     account = await _load_hl_account(user["id"])
+    if not account.get("connected"):
+        return JSONResponse(
+            status_code=200,
+            content={**account, "refresh_secs": refresh_secs},
+        )
     return ok({**account, "refresh_secs": refresh_secs})
 
 
 @router.get("/positions")
 async def get_positions(sync: bool = Query(True), user: dict = Depends(get_current_user)):
-    address = db.get_hl_address(user["id"])
-    if not address:
+    if not db.get_hl_address(user["id"]):
         return ok([])
     if sync:
-        positions, failure = await fetch_positions_with_prices(address)
-        if failure:
-            raise HTTPException(status_code=502, detail=f"positions_sync_failed:{failure.reason}")
+        positions, _ = await fetch_positions_with_prices(user["id"])
         db.upsert_hl_positions(user["id"], positions)
     return ok(db.get_hl_positions(user["id"]))
 
 
 @router.get("/orders")
 async def get_orders(sync: bool = Query(True), user: dict = Depends(get_current_user)):
-    address = db.get_hl_address(user["id"])
-    if not address:
+    if not db.get_hl_address(user["id"]):
         return ok([])
     if sync:
-        rows, failure = await fetch_open_orders_parsed(address)
-        if failure:
-            raise HTTPException(status_code=502, detail=f"orders_sync_failed:{failure.reason}")
+        rows, _ = await fetch_open_orders_parsed(user["id"])
         normalized = [_normalize_order(x) for x in rows]
         db.upsert_hl_orders(user["id"], normalized)
     return ok(db.get_hl_orders(user["id"], limit=200))
@@ -207,17 +183,15 @@ async def get_orders(sync: bool = Query(True), user: dict = Depends(get_current_
 
 @router.get("/history")
 async def get_history(limit: int = Query(100, ge=1, le=500), sync: bool = Query(True), user: dict = Depends(get_current_user)):
-    address = db.get_hl_address(user["id"])
-    if address and sync:
-        rows, failure = await fetch_trade_history(address, limit=limit)
-        if not failure:
-            existing = {str(x.get("hash") or x.get("tid")) for x in db.get_hl_trade_history(user["id"], limit=1000)}
-            for item in rows:
-                normalized = _normalize_fill(item)
-                sig = str(normalized.get("hash") or normalized.get("timestamp") or "")
-                if sig and sig in existing:
-                    continue
-                db.save_hl_trade(user["id"], normalized)
+    if db.get_hl_address(user["id"]) and sync:
+        rows = await fetch_trade_history(user["id"], limit=limit)
+        existing = {str(x.get("hash") or x.get("tid")) for x in db.get_hl_trade_history(user["id"], limit=1000)}
+        for item in rows:
+            normalized = _normalize_fill(item)
+            sig = str(normalized.get("hash") or normalized.get("timestamp") or "")
+            if sig and sig in existing:
+                continue
+            db.save_hl_trade(user["id"], normalized)
     history = db.get_hl_trade_history(user["id"], limit=limit)
     return ok(history)
 
@@ -260,7 +234,17 @@ async def get_ohlcv(
     user: dict = Depends(get_current_user),
 ):
     candles = await fetch_candles(pair, timeframe, limit)
-    return ok({"pair": pair, "timeframe": timeframe, "candles": candles})
+    if not candles:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "candles": [],
+                "error": f"Could not fetch data for {pair} {timeframe}",
+                "pair": pair,
+                "timeframe": timeframe,
+            },
+        )
+    return ok({"pair": pair, "timeframe": timeframe, "candles": candles, "count": len(candles)})
 
 
 @router.get("/models")
@@ -297,42 +281,60 @@ def toggle_model(model_id: int, body: ToggleBody, user: dict = Depends(get_curre
 
 
 @router.post("/scanner/run")
-async def run_scanner(body: ScannerRunBody, user: dict = Depends(require_tier("pro"))):
-    all_models = db.get_user_models(user["id"], active_only=True)
-    if not all_models:
-        raise HTTPException(status_code=400, detail="no_active_models")
-    selected = all_models
-    if body.model_ids and not body.include_all_models:
-        wanted = set(body.model_ids)
-        selected = [m for m in all_models if int(m.get("id") or 0) in wanted]
-    if not selected:
-        raise HTTPException(status_code=400, detail="no_selected_models")
-    pairs = [p.upper() for p in body.pairs if p]
-    started_at = datetime.now(timezone.utc)
-    executed = 0
+async def run_scanner(body: ScannerRunBody | None = None, user: dict = Depends(require_tier("pro"))):
+    user_id = user["id"]
+    payload = body or ScannerRunBody()
     try:
+        all_models = db.get_user_models(user_id, active_only=True)
+        if not all_models:
+            return {
+                "success": True,
+                "signals_found": 0,
+                "message": "No active models. Activate a model first.",
+                "results": [],
+            }
+
+        selected = all_models
+        if payload.model_ids and not payload.include_all_models:
+            wanted = set(payload.model_ids)
+            selected = [m for m in all_models if int(m.get("id") or 0) in wanted]
+        if not selected:
+            return {"success": True, "signals_found": 0, "message": "No selected models", "results": []}
+
+        selected_pairs = [p.upper() for p in (payload.pairs or []) if p]
+        results = []
         for model in selected:
-            model_pairs = pairs if (pairs and not body.include_all_pairs) else [str(model.get("pair") or "BTCUSDT").upper()]
+            model_pairs = selected_pairs if (selected_pairs and not payload.include_all_pairs) else [str(model.get("pair") or "BTCUSDT").upper()]
             for pair in model_pairs:
                 model_copy = {**model, "pair": pair}
-                await run_model(model_copy, user["id"], None)
-                executed += 1
-    except Exception:
-        log.exception("Perps scanner failed for user=%s", user["id"])
-        raise HTTPException(status_code=500, detail="scanner_failed")
-    signals = db.get_pending_signals(user["id"], section="perps", active_only=True)
-    recent = [s for s in signals if _parse_iso(s.get("created_at")) >= started_at]
-    results = [
-        {
-            "id": s.get("id"),
-            "pair": s.get("pair"),
-            "timestamp": s.get("created_at"),
-            "signal_strength": float(s.get("score") or s.get("quality_score") or 0),
-            "grade": s.get("grade") or s.get("quality_grade"),
+                signal = await run_model(model_copy, user_id, None)
+                results.append(
+                    {
+                        "model": model_copy.get("name", "Model"),
+                        "pair": pair,
+                        "timeframe": model_copy.get("timeframe", "1h"),
+                        "status": "evaluated",
+                        "phase_reached": signal.get("phase_reached", 0),
+                        "passed": bool(signal.get("passed", False)),
+                        "quality_score": signal.get("quality_score", 0),
+                        "quality_grade": signal.get("quality_grade", signal.get("grade", "F")),
+                        "direction": signal.get("direction", "neutral"),
+                        "signal_id": signal.get("id"),
+                        "error": signal.get("error"),
+                    }
+                )
+
+        signals_found = len([r for r in results if r.get("passed")])
+        return {
+            "success": True,
+            "signals_found": signals_found,
+            "models_scanned": len(selected),
+            "results": results,
+            "message": f"Found {signals_found} signal(s) across {len(selected)} model(s)",
         }
-        for s in recent
-    ]
-    return ok({"executed_models": executed, "timestamp": started_at.isoformat(), "results": results})
+    except Exception as exc:
+        log.error("run_scanner %s: %s", user_id, exc)
+        return {"success": False, "error": str(exc), "results": []}
 
 
 @router.get("/pending")

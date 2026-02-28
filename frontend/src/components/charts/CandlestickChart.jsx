@@ -10,7 +10,7 @@ export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = 
   const [pair, setPair] = useState(defaultPair);
   const [tf, setTf] = useState(defaultTf);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['ohlcv', pair, tf],
     queryFn: () => getOHLCV(pair, tf, 200),
     staleTime: 30_000,
@@ -40,7 +40,7 @@ export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = 
   }, [height]);
 
   useEffect(() => {
-    if (!seriesRef.current || !data?.candles) return;
+    if (!seriesRef.current || !data?.candles?.length) return;
     const formatted = data.candles.map((c) => ({
       time: Math.floor(Number(c.timestamp) / 1000),
       open: Number(c.open),
@@ -50,6 +50,8 @@ export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = 
     }));
     seriesRef.current.setData(formatted);
   }, [data]);
+
+  const noData = !isLoading && (!data?.candles?.length || data?.error);
 
   return (
     <div className="card">
@@ -61,7 +63,16 @@ export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = 
           </button>
         ))}
       </div>
-      {isLoading ? <div className="skeleton h-96 w-full" /> : <div ref={containerRef} className="w-full h-96" />}
+      {isLoading && <div className="skeleton h-48 md:h-72 lg:h-96 w-full" />}
+      {noData && (
+        <div className="h-48 md:h-72 lg:h-96 flex flex-col items-center justify-center gap-3 rounded-2xl bg-[var(--bg-secondary)]">
+          <p className="text-3xl">📊</p>
+          <p className="font-medium">No chart data</p>
+          <p className="text-sm text-[var(--text-muted)]">{data?.error || `Could not load ${pair} ${tf} data`}</p>
+          <button onClick={() => refetch()} className="btn-secondary btn-sm">Retry</button>
+        </div>
+      )}
+      {!isLoading && !noData && <div ref={containerRef} className="w-full h-48 md:h-72 lg:h-96" />}
     </div>
   );
 }

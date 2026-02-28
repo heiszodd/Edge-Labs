@@ -20,6 +20,89 @@ import {
   scanContract,
   withdrawDemo,
 } from '../api/degen';
+import { PageWrapper } from '../components/common/PageWrapper';
+
+const formatNum = (value) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+function SafetyReport({ data }) {
+  if (!data) return null;
+  if (!data.found) {
+    return (
+      <div className="card">
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">❌</span>
+          <div>
+            <p className="font-semibold">Token Not Found</p>
+            <p className="text-sm text-[var(--text-muted)]">{data.error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="card">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-xl font-bold">{data.name}</h3>
+            <p className="text-[var(--text-muted)] font-mono">${data.symbol} · {data.ca.slice(0, 8)}…</p>
+          </div>
+          <div className={`grade-${data.grade} text-2xl px-4 py-2`}>{data.grade}</div>
+        </div>
+        <div className="mt-4">
+          <div className="flex justify-between text-xs mb-1"><span>Safety Score</span><span className="font-bold">{data.safety_score}/100</span></div>
+          <div className="h-2 rounded-full bg-[var(--bg-secondary)]">
+            <div style={{ width: `${data.safety_score}%` }} className={`h-full rounded-full ${data.safety_score >= 70 ? 'bg-emerald-500' : data.safety_score >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`} />
+          </div>
+        </div>
+        {data.warnings?.length > 0 && (
+          <div className="mt-4 space-y-2">{data.warnings.map((w, i) => <div key={i} className="text-sm text-amber-400">{w}</div>)}</div>
+        )}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          ['Price', `$${Number(data.price_usd || 0).toFixed(8)}`],
+          ['MCap', `$${formatNum(data.mcap_usd)}`],
+          ['Liquidity', `$${formatNum(data.liquidity_usd)}`],
+          ['Age', `${Number(data.age_hours || 0).toFixed(0)}h`],
+          ['Holders', Number(data.holder_count || 0).toLocaleString()],
+          ['Dev Wallet', `${Number(data.dev_wallet_pct || 0).toFixed(1)}%`],
+          ['B/S Ratio', Number(data.bs_ratio || 0).toFixed(2)],
+          ['Rug Score', `${data.rug_score}/100`],
+        ].map(([k, v]) => (
+          <div key={k} className="card text-center">
+            <p className="stat-label">{k}</p>
+            <p className="stat-value text-base">{v}</p>
+          </div>
+        ))}
+      </div>
+      <div className="card">
+        <h4 className="font-semibold mb-3">Safety Checklist</h4>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          {[
+            ['Mint Disabled', data.mint_disabled],
+            ['Freeze Disabled', data.freeze_disabled],
+            ['LP Locked', data.lp_locked],
+            ['Verified', data.verified],
+            ['Not Honeypot', !data.is_honeypot],
+            ['Low Dev %', Number(data.dev_wallet_pct || 0) < 15],
+          ].map(([label, pass]) => (
+            <div key={label} className={`flex items-center gap-2 ${pass ? 'text-emerald-400' : 'text-rose-400'}`}>
+              <span>{pass ? '✓' : '✕'}</span> {label}
+            </div>
+          ))}
+        </div>
+      </div>
+      {['S', 'A', 'B'].includes(data.grade) && (
+        <div className="flex gap-3">
+          <button className="btn-primary flex-1">Buy Live (Pro)</button>
+          <button className="btn-secondary flex-1">Buy Demo</button>
+          <a href={data.dex_url} target="_blank" rel="noreferrer" className="btn-secondary">DexScreener ↗</a>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Degen() {
   const qc = useQueryClient();
@@ -29,7 +112,6 @@ export default function Degen() {
   const [demoAmount, setDemoAmount] = useState(200);
   const [walletInput, setWalletInput] = useState('');
   const [caInput, setCaInput] = useState('');
-  const [result, setResult] = useState(null);
   const [scanReport, setScanReport] = useState(null);
   const [caError, setCaError] = useState('');
 
@@ -41,62 +123,32 @@ export default function Degen() {
   const trackedQ = useQuery({ queryKey: ['degen', 'tracked'], queryFn: getTrackedWallets, staleTime: 30_000 });
 
   const scannerM = useMutation({ mutationFn: runScanner, onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'scanner'] }) });
-  const liveBuyM = useMutation({
-    mutationFn: ({ token, amount, slip }) => buyLive(token, amount, slip, true),
-    onSuccess: (data) => setResult({ ok: true, message: `Success: ${data?.plan?.token_address || ''}` }),
-    onError: (err) => setResult({ ok: false, message: err?.response?.data?.detail || 'RPC failure' }),
-  });
-  const demoBuyM = useMutation({
-    mutationFn: ({ token, amount, slip }) => buyDemo(token, amount, slip),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['degen', 'demo'] });
-      setResult({ ok: true, message: 'Demo ape executed' });
-    },
-    onError: (err) => setResult({ ok: false, message: err?.response?.data?.detail || 'Demo order failed' }),
-  });
-  const watchM = useMutation({
-    mutationFn: (token) => addWatchlist(token),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'watchlist'] }),
-  });
+  const liveBuyM = useMutation({ mutationFn: ({ token, amount, slip }) => buyLive(token, amount, slip, true) });
+  const demoBuyM = useMutation({ mutationFn: ({ token, amount, slip }) => buyDemo(token, amount, slip), onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'demo'] }) });
+  const watchM = useMutation({ mutationFn: (token) => addWatchlist(token), onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'watchlist'] }) });
   const depM = useMutation({ mutationFn: depositDemo, onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'demo'] }) });
   const withdrawM = useMutation({ mutationFn: withdrawDemo, onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'demo'] }) });
   const resetM = useMutation({ mutationFn: resetDemo, onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'demo'] }) });
   const clearLogsM = useMutation({ mutationFn: clearDemoLogs, onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'demo-history'] }) });
-  const addTrackedM = useMutation({
-    mutationFn: (address) => addTrackedWallet({ wallet_address: address, auto_mirror: false }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'tracked'] }),
-  });
-  const scanM = useMutation({
-    mutationFn: (address) => scanContract(address),
-    onSuccess: (data) => {
-      setCaError('');
-      setScanReport(data);
-    },
-  });
+  const addTrackedM = useMutation({ mutationFn: (address) => addTrackedWallet({ wallet_address: address, auto_mirror: false }), onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'tracked'] }) });
+  const scanM = useMutation({ mutationFn: (address) => scanContract(address), onSuccess: (data) => { setCaError(''); setScanReport(data); } });
 
   return (
-    <div className="space-y-4">
+    <PageWrapper className="space-y-4">
       <h1 className="text-2xl font-semibold">Degen</h1>
-
       <div className="card space-y-2">
         <h2 className="font-semibold">Solana Wallet</h2>
         <p className="text-sm text-[var(--text-muted)]">SOL: {walletQ.data?.sol_balance ?? 0} | Tokens: {walletQ.data?.token_count ?? 0}</p>
       </div>
 
       <TierGuard tier="pro">
-        <div className="card space-y-3">
-          <button className="btn-primary" onClick={() => scannerM.mutate()} disabled={scannerM.isPending}>
-            {scannerM.isPending ? 'Running...' : 'Run Scanner'}
-          </button>
-          {scannerM.error && <p className="text-sm text-danger">{scannerM.error?.response?.data?.detail || 'Scanner failed'}</p>}
-        </div>
+        <div className="card"><button className="btn-primary" onClick={() => scannerM.mutate()}>{scannerM.isPending ? 'Running...' : 'Run Scanner'}</button></div>
       </TierGuard>
 
       <div className="card space-y-3">
         <h2 className="font-semibold">Contract Address Scanner</h2>
-        <label className="text-sm text-[var(--text-muted)]">Paste Token Contract Address</label>
         <div className="flex flex-col md:flex-row gap-2">
-          <input className="input" value={caInput} onChange={(e) => setCaInput(e.target.value.trim())} placeholder="Paste Token Contract Address" />
+          <input className="input" value={caInput} onChange={(e) => setCaInput(e.target.value.trim())} placeholder="Paste Solana contract address" />
           <button
             className="btn-primary"
             disabled={scanM.isPending || !caInput}
@@ -113,45 +165,20 @@ export default function Degen() {
           </button>
         </div>
         {caError && <div className="badge badge-danger">{caError}</div>}
-        {scanM.error && <div className="badge badge-danger">{scanM.error?.response?.data?.detail || 'Scan failed'}</div>}
-        {scanReport && (
-          <div className="card !p-3 space-y-1 text-sm">
-            <p>Name: {scanReport.symbol || 'Unknown'}</p>
-            <p>Price: {scanReport.price_usd ?? 0}</p>
-            <p>Liquidity: {scanReport.liquidity_usd ?? 0}</p>
-            <p>Volume: {scanReport.volume_24h ?? 0}</p>
-            <p>CA: {caInput.slice(0, 4)}...</p>
-            <p>Risk: {scanReport.grade || 'D'} | Score: {scanReport.score ?? 0}</p>
-            <div className="flex gap-2">
-              <button className="btn-secondary btn-sm" onClick={() => setSelected({ token_name: scanReport.symbol || 'Token', token_address: caInput })}>Ape (Demo)</button>
-              <button className="btn-primary btn-sm" onClick={() => setSelected({ token_name: scanReport.symbol || 'Token', token_address: caInput })}>Ape (Live)</button>
-            </div>
-          </div>
-        )}
+        <SafetyReport data={scanReport} />
       </div>
 
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
         {(scannerResultsQ.data || []).map((row) => (
-          <div key={row.id} className="card !p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">{row.token_name}</h3>
-              <span className="badge badge-warning">{row.risk_indicator}</span>
-            </div>
+          <div key={row.id} className="card !p-4">
+            <div className="flex items-center justify-between"><h3 className="font-semibold">{row.token_name}</h3><span className="badge badge-warning">{row.risk_indicator}</span></div>
             <p className="text-xs text-[var(--text-muted)]">{row.token_short}...</p>
-            <p className="text-xs">Price: {row.price} | Liq: {row.liquidity} | Vol: {row.volume}</p>
-            <div className="flex gap-2">
-              <button className="btn-secondary btn-sm" onClick={() => { setSelected(row); setResult(null); }}>Ape (Demo)</button>
-              <button className="btn-primary btn-sm" onClick={() => { setSelected(row); setResult(null); }}>Ape (Live)</button>
+            <div className="flex gap-2 mt-3">
+              <button className="btn-secondary btn-sm" onClick={() => setSelected(row)}>Ape (Demo)</button>
+              <button className="btn-primary btn-sm" onClick={() => setSelected(row)}>Ape (Live)</button>
             </div>
           </div>
         ))}
-      </div>
-
-      <div className="card space-y-3">
-        <h2 className="font-semibold">Whitelist</h2>
-        <div className="flex gap-2 flex-wrap">
-          {(watchQ.data || []).map((item) => <span key={item.id} className="badge badge-info">{item.token_address || item.address}</span>)}
-        </div>
       </div>
 
       <div className="card space-y-3">
@@ -159,33 +186,41 @@ export default function Degen() {
         <p className="text-sm text-[var(--text-muted)]">Balance: {demoQ.data?.balance ?? 0}</p>
         <div className="flex gap-2">
           <input className="input max-w-40" type="number" value={demoAmount} onChange={(e) => setDemoAmount(Number(e.target.value || 0))} />
-          <button className="btn-success" onClick={() => depM.mutate(demoAmount)} disabled={depM.isPending}>Deposit</button>
-          <button className="btn-secondary" onClick={() => withdrawM.mutate(demoAmount)} disabled={withdrawM.isPending}>Withdraw</button>
-          <button className="btn-danger" onClick={() => resetM.mutate()} disabled={resetM.isPending}>Reset</button>
-          <button className="btn-ghost" onClick={() => clearLogsM.mutate()} disabled={clearLogsM.isPending}>Clear Logs</button>
+          <button className="btn-success" onClick={() => depM.mutate(demoAmount)}>Deposit</button>
+          <button className="btn-secondary" onClick={() => withdrawM.mutate(demoAmount)}>Withdraw</button>
+          <button className="btn-danger" onClick={() => resetM.mutate()}>Reset</button>
+          <button className="btn-ghost" onClick={() => clearLogsM.mutate()}>Clear Logs</button>
         </div>
         <p className="text-xs text-[var(--text-muted)]">Open: {demoHistoryQ.data?.open?.length || 0} | Closed: {demoHistoryQ.data?.closed?.length || 0}</p>
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-semibold">Watchlist</h2>
+        <div className="flex gap-2 flex-wrap">{(watchQ.data || []).map((item) => <span key={item.id} className="badge badge-info">{item.token_address || item.address}</span>)}</div>
       </div>
 
       <div className="card space-y-3">
         <h2 className="font-semibold">Wallet Tracking</h2>
         <div className="flex gap-2">
           <input className="input" value={walletInput} onChange={(e) => setWalletInput(e.target.value)} placeholder="Wallet address" />
-          <button className="btn-primary" onClick={() => addTrackedM.mutate(walletInput)} disabled={!walletInput || addTrackedM.isPending}>Track</button>
-          <button className="btn-secondary" onClick={async () => {
-            const csv = await exportTrackedWallets();
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'tracked_wallets.csv';
-            a.click();
-            URL.revokeObjectURL(url);
-          }}>Export CSV</button>
+          <button className="btn-primary" onClick={() => addTrackedM.mutate(walletInput)} disabled={!walletInput}>Track</button>
+          <button
+            className="btn-secondary"
+            onClick={async () => {
+              const csv = await exportTrackedWallets();
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'tracked_wallets.csv';
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            Export CSV
+          </button>
         </div>
-        <div className="text-xs space-y-1">
-          {(trackedQ.data || []).map((row) => <div key={row.id}>{row.wallet_address} pnl {row.pnl_from_copies ?? 0}</div>)}
-        </div>
+        <div className="text-xs space-y-1">{(trackedQ.data || []).map((row) => <div key={row.id}>{row.wallet_address} pnl {row.pnl_from_copies ?? 0}</div>)}</div>
       </div>
 
       {selected && (
@@ -194,32 +229,16 @@ export default function Degen() {
             <h3 className="font-semibold">{selected.token_name}</h3>
             <p className="text-xs text-[var(--text-muted)]">{selected.token_address}</p>
             <input className="input" type="number" value={size} onChange={(e) => setSize(Number(e.target.value || 0))} />
-            <div>
-              <label className="text-xs text-[var(--text-muted)]">Slippage (bps)</label>
-              <input className="input" type="number" value={slippage} onChange={(e) => setSlippage(Number(e.target.value || 0))} />
-            </div>
+            <input className="input" type="number" value={slippage} onChange={(e) => setSlippage(Number(e.target.value || 0))} />
             <div className="flex gap-2">
-              <button
-                className="btn-secondary"
-                onClick={() => demoBuyM.mutate({ token: selected.token_address, amount: size, slip: slippage })}
-                disabled={demoBuyM.isPending}
-              >
-                Confirm Demo
-              </button>
-              <button
-                className="btn-primary"
-                onClick={() => liveBuyM.mutate({ token: selected.token_address, amount: size, slip: slippage })}
-                disabled={liveBuyM.isPending}
-              >
-                Confirm Live
-              </button>
+              <button className="btn-secondary" onClick={() => demoBuyM.mutate({ token: selected.token_address, amount: size, slip: slippage })}>Confirm Demo</button>
+              <button className="btn-primary" onClick={() => liveBuyM.mutate({ token: selected.token_address, amount: size, slip: slippage })}>Confirm Live</button>
               <button className="btn-ghost" onClick={() => setSelected(null)}>Cancel</button>
               <button className="btn-ghost" onClick={() => watchM.mutate(selected.token_address)}>Whitelist</button>
             </div>
-            {result && <div className={`badge ${result.ok ? 'badge-success' : 'badge-danger'}`}>{result.message}</div>}
           </div>
         </div>
       )}
-    </div>
+    </PageWrapper>
   );
 }

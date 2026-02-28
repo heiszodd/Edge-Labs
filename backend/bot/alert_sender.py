@@ -39,3 +39,15 @@ async def send_alert(user_id: str, text: str, keyboard=None) -> bool:
     except Exception as e:
         logger.warning("Alert send failed user=%s: %s", user_id, e)
         return False
+
+
+async def send_signal_alert(user_id: str, signal: dict[str, Any]) -> bool:
+    try:
+        pair = signal.get("pair", "PAIR")
+        direction = str(signal.get("direction", "neutral")).upper()
+        grade = signal.get("quality_grade", signal.get("grade", "F"))
+        score = signal.get("quality_score", 0)
+        text = f"*Signal*: {pair} {direction}\nGrade: {grade}\nScore: {score}"
+        return await send_alert(user_id, text)
+    except Exception:
+        return False

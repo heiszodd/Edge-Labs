@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -6,6 +6,13 @@ import Topbar from './Topbar';
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { pathname } = useLocation();
+  const [show, setShow] = useState(true);
+
+  useEffect(() => {
+    setShow(false);
+    const t = setTimeout(() => setShow(true), 50);
+    return () => clearTimeout(t);
+  }, [pathname]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--bg-primary)]">
@@ -16,15 +23,25 @@ export default function Layout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Topbar onMenuClick={() => setSidebarOpen((v) => !v)} />
         <main className="flex-1 overflow-y-auto p-5 md:p-7 pb-24 md:pb-7">
-          <div className="max-w-7xl mx-auto animate-fade-in">
+          <div
+            className="max-w-7xl mx-auto"
+            style={{
+              opacity: show ? 1 : 0,
+              transform: show ? 'translateY(0)' : 'translateY(8px)',
+              transition: 'opacity 0.3s ease, transform 0.3s ease',
+            }}
+          >
             <Outlet />
           </div>
         </main>
       </div>
 
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[var(--bg-card)]/90 backdrop-blur-md border-t border-[var(--border)] flex items-center justify-around px-2 py-2">
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[var(--bg-card)]/90 backdrop-blur-md border-t border-[var(--border)] flex items-center justify-around px-2 py-2"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
         {[
-          ['/', 'Home'],
+          ['/dashboard', 'Home'],
           ['/perps', 'Perps'],
           ['/degen', 'Degen'],
           ['/predictions', 'Pred'],

@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 HTF_MAP = {
     "1m": "5m",
     "3m": "15m",
-    "5m": "1h",
+    "5m": "15m",
     "15m": "1h",
     "30m": "1h",
     "1h": "4h",
@@ -59,14 +59,31 @@ def _to_rows(raw: list[list[Any]]) -> list[dict[str, Any]]:
 
 
 async def fetch_candles(pair, timeframe, limit=100) -> list:
-    key = _cache_key(str(pair).upper(), timeframe, int(limit))
+    pair = str(pair or "").upper().replace("/", "").replace("-", "")
+    timeframe = str(timeframe or "1h")
+    valid_tfs = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"}
+    if timeframe not in valid_tfs:
+        log.warning("Invalid timeframe %s, defaulting to 1h", timeframe)
+        timeframe = "1h"
+    limit = int(max(1, min(int(limit or 100), 1000)))
+
+    key = _cache_key(pair, timeframe, limit)
     if _is_fresh(key):
         return _cache[key]["data"]
     try:
         async with httpx.AsyncClient(timeout=10.0) as c:
-            r = await c.get(BINANCE_KLINES, params={"symbol": str(pair).upper(), "interval": timeframe, "limit": int(limit)})
-            r.raise_for_status()
-            rows = _to_rows(r.json() or [])
+            r = await c.get(BINANCE_KLINES, params={"symbol": pair, "interval": timeframe, "limit": limit})
+            if r.status_code != 200:
+                try:
+                    detail = r.json()
+                except Exception:
+                    detail = r.text[:500]
+                log.error("Binance error %s %s: %s", pair, timeframe, detail)
+                return []
+            raw = r.json()
+            if not raw or not isinstance(raw, list):
+                return []
+            rows = _to_rows(raw)
             _cache[key] = {"data": rows, "ts": time.time()}
             return rows
     except httpx.TimeoutException:

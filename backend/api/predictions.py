@@ -10,7 +10,7 @@ from backend import db
 from backend.api.common import ok
 from backend.dependencies import get_current_user, require_tier
 from backend.services.external_api import request_json
-from engine.polymarket.scanner import run_market_scanner
+from engine.polymarket.scanner import fetch_polymarket_crypto_markets
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
 
@@ -38,29 +38,17 @@ class BalanceBody(BaseModel):
 
 @router.get("/scanner")
 async def scanner(
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0, le=10_000),
-    category: str = Query("all"),
+    limit: int = Query(10, ge=1, le=25),
     user: dict = Depends(get_current_user),
 ):
-    rows = await run_market_scanner(limit=limit, offset=offset, category=category)
-    out = []
-    for row in rows:
-        market = row.get("market") or {}
-        out.append(
-            {
-                "market_id": market.get("id") or market.get("conditionId") or market.get("questionID"),
-                "market": market.get("question") or market.get("slug") or "Unknown market",
-                "score": float(row.get("score") or 0),
-                "grade": "A" if row.get("score", 0) >= 80 else "B" if row.get("score", 0) >= 65 else "C",
-                "category": market.get("category") or "uncategorized",
-                "liquidity": float(market.get("liquidity") or 0),
-                "volume": float(market.get("volume") or 0),
-                "yes_price": float(market.get("outcomePrices", [0.5])[0] if market.get("outcomePrices") else market.get("lastTradePrice", 0.5) or 0.5),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-    return ok({"items": out, "limit": limit, "offset": offset, "category": category})
+    markets = await fetch_polymarket_crypto_markets(limit=limit)
+    return ok(
+        {
+            "markets": markets,
+            "count": len(markets),
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
 
 @router.get("/wallet")

@@ -357,8 +357,33 @@ def get_hl_address(user_id) -> str:
     return row.get("encrypted", "")
 
 
+def get_user_hl_address(user_id) -> str:
+    try:
+        return get_hl_address(user_id)
+    except Exception:
+        return ""
+
+
 def save_hl_address(user_id, address):
     _upsert("encrypted_keys", {"user_id": user_id, "key_name": "hl_address", "encrypted": address, "label": "hl address"}, on_conflict="user_id,key_name")
+
+
+def migrate_hl_addresses():
+    """
+    Fix stored Hyperliquid addresses missing the 0x prefix.
+    """
+    try:
+        rows = _select_many("encrypted_keys", key_name="hl_address")
+        for row in rows or []:
+            user_id = row.get("user_id")
+            raw = str(row.get("encrypted") or "").strip()
+            if not user_id or not raw or raw.startswith("0x"):
+                continue
+            fixed = f"0x{raw}"
+            if len(fixed) == 42:
+                _update("encrypted_keys", {"encrypted": fixed}, user_id=user_id, key_name="hl_address")
+    except Exception:
+        logger.exception("migrate_hl_addresses failed")
 
 
 def upsert_hl_positions(user_id, positions: list):
@@ -437,6 +462,23 @@ def get_hl_trade_history(user_id, limit=50) -> list:
     return _select_many("hl_trade_history", user_id=user_id, order="id", desc=True, limit=limit)
 
 
+def get_trade_history(user_id, section: str = "perps", limit: int = 200) -> list:
+    try:
+        name = str(section or "").lower()
+        if name == "perps":
+            rows = get_hl_trade_history(user_id, limit=limit)
+            if rows:
+                return rows
+            return get_closed_demo_trades(user_id, "perps", limit=limit)
+        if name in {"degen", "sol"}:
+            return get_closed_demo_trades(user_id, "sol", limit=limit)
+        if name in {"predictions", "poly"}:
+            return get_closed_demo_trades(user_id, "poly", limit=limit)
+        return []
+    except Exception:
+        return []
+
+
 def get_existing_trade_timestamps(user_id) -> set:
     rows = _select_many("hl_trade_history", user_id=user_id)
     return {r.get("timestamp") for r in rows if r.get("timestamp")}
@@ -455,6 +497,13 @@ def save_sol_address(user_id, address):
 
 def get_open_sol_positions(user_id) -> list:
     return _select_many("sol_positions", user_id=user_id, status="open", order="opened_at", desc=True)
+
+
+def get_sol_positions(user_id) -> list:
+    try:
+        return get_open_sol_positions(user_id)
+    except Exception:
+        return []
 
 
 def get_sol_position(user_id, token_address) -> dict:
@@ -559,6 +608,23 @@ def toggle_prediction_model(model_id, user_id, active):
 
 def get_open_poly_trades(user_id) -> list:
     return _select_many("poly_live_trades", user_id=user_id, status="open", order="opened_at", desc=True)
+
+
+def get_poly_trades(user_id, limit=200) -> list:
+    try:
+        live_rows = _select_many("poly_live_trades", user_id=user_id, order="opened_at", desc=True, limit=limit)
+        if live_rows:
+            return live_rows
+        return get_closed_demo_trades(user_id, "poly", limit=limit)
+    except Exception:
+        return []
+
+
+def get_all_pending_signals(user_id) -> list:
+    try:
+        return get_pending_signals(user_id, section=None, active_only=True)
+    except Exception:
+        return []
 
 
 # Emergency stop

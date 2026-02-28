@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 import secrets
 import string
+import hashlib
+import hmac
+import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -12,6 +16,7 @@ from backend import config, db
 from backend.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+log = logging.getLogger(__name__)
 
 
 class RegisterBody(BaseModel):
@@ -29,6 +34,15 @@ class TelegramVerifyBody(BaseModel):
     token: str
     telegram_user_id: int
     telegram_username: str | None = None
+
+
+class TelegramOAuthData(BaseModel):
+    id: int
+    first_name: str
+    username: str = ""
+    photo_url: str = ""
+    auth_date: int
+    hash: str
 
 
 def _safe_username(source: str, fallback_suffix: str) -> str:
@@ -239,6 +253,67 @@ def telegram_verify(body: TelegramVerifyBody, x_service_key: str | None = Header
 def telegram_unlink(user: dict = Depends(get_current_user)) -> dict:
     db.update_user(
         user.get("id"),
+        {
+            "telegram_user_id": None,
+            "telegram_username": None,
+            "telegram_linked": False,
+            "telegram_link_token": None,
+            "telegram_link_expires": None,
+        },
+    )
+    return {"success": True}
+
+
+def _verify_telegram_hash(data: dict, received_hash: str) -> bool:
+    try:
+        token = config.TELEGRAM_BOT_TOKEN
+        if not token:
+            return False
+        check_arr = sorted([f"{k}={v}" for k, v in data.items() if k != "hash"])
+        check_string = "\n".join(check_arr)
+        secret_key = hashlib.sha256(token.encode()).digest()
+        computed = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(computed, received_hash)
+    except Exception as exc:
+        log.error("Telegram hash verification: %s", exc)
+        return False
+
+
+@router.post("/telegram/verify-oauth")
+async def verify_telegram_oauth(data: TelegramOAuthData, user=Depends(get_current_user)):
+    payload = data.model_dump()
+    received_hash = payload.pop("hash", "")
+    if not _verify_telegram_hash(payload, received_hash):
+        raise HTTPException(status_code=400, detail="Invalid Telegram authentication")
+
+    auth_age = int(time.time()) - int(payload.get("auth_date", 0))
+    if auth_age > 600:
+        raise HTTPException(status_code=400, detail="Telegram auth expired - please try again")
+
+    user_id = user["id"]
+    telegram_user_id = str(payload["id"])
+    telegram_username = payload.get("username", "")
+    db.update_user(
+        user_id,
+        {
+            "telegram_user_id": telegram_user_id,
+            "telegram_username": telegram_username,
+            "telegram_linked": True,
+            "telegram_link_token": None,
+            "telegram_link_expires": None,
+        },
+    )
+    return {
+        "success": True,
+        "telegram_username": telegram_username,
+        "telegram_first_name": payload.get("first_name", ""),
+    }
+
+
+@router.post("/telegram/disconnect")
+async def telegram_disconnect(user: dict = Depends(get_current_user)):
+    db.update_user(
+        user["id"],
         {
             "telegram_user_id": None,
             "telegram_username": None,
