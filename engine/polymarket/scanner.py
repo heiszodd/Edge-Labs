@@ -182,3 +182,8 @@ async def fetch_polymarket_crypto_markets(limit: int = 10) -> list[dict]:
     except Exception as exc:
         log.error("polymarket scanner: %s", exc)
         return []
+
+
+async def run_scanner_for_user(user_id: str, limit: int = 10) -> list[dict]:
+    # Backward-compatible entry point used by backend.jobs.prediction_scanner_job.
+    return await fetch_polymarket_crypto_markets(limit=limit)
