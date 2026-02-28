@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from statistics import mean
 
 from backend import db
 from engine.ohlcv_cache import fetch_candles_range
 from engine.phase_engine import _make_trade_plan
 from engine.rules import evaluate_rule
+
+log = logging.getLogger(__name__)
 
 
 def _safe_float(value, default=0.0) -> float:
@@ -34,10 +37,15 @@ async def run_backtest(
     end_ms = int(datetime.fromisoformat(end_date).timestamp() * 1000)
     candles = await fetch_candles_range(pair, timeframe, start_ms, end_ms)
     if len(candles) < 120:
+        log.warning("Backtest insufficient candles for %s %s between %s and %s: %s", pair, timeframe, start_date, end_date, len(candles))
         summary = {
             "trades": 0,
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
             "win_rate": 0.0,
             "total_pnl": 0.0,
+            "pnl_summary": {"gross": 0.0, "net": 0.0},
             "max_drawdown": 0.0,
             "avg_rr": 0.0,
             "sharpe_ratio": 0.0,
@@ -136,8 +144,15 @@ async def run_backtest(
     summary = {
         "status": "complete",
         "trades": total,
+        "total_trades": total,
+        "wins": wins,
+        "losses": losses,
         "win_rate": round(win_rate, 4),
         "total_pnl": round(total_pnl, 4),
+        "pnl_summary": {
+            "gross": round(total_pnl, 4),
+            "net": round(total_pnl, 4),
+        },
         "max_drawdown": round(max_dd, 4),
         "avg_rr": round(avg_rr, 4),
         "sharpe_ratio": round(sharpe, 4),

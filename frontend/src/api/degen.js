@@ -5,6 +5,9 @@ export const scanContract = (address) => client.post('/api/degen/scan-contract',
 export const buyLive = (token_address, size_usd, slippage_bps = 100, confirm = true) => client.post('/api/degen/buy', { token_address, size_usd, slippage_bps, confirm }).then(unwrap);
 export const buyDemo = (token_address, size_usd, slippage_bps = 100) => client.post('/api/degen/demo-buy', { token_address, size_usd, slippage_bps }).then(unwrap);
 export const getModels = () => client.get('/api/degen/models').then(unwrap);
+export const createModel = (payload) => client.post('/api/degen/models', payload).then(unwrap);
+export const updateModel = (id, payload) => client.put(`/api/degen/models/${id}`, payload).then(unwrap);
+export const deleteModel = (id) => client.delete(`/api/degen/models/${id}`).then(unwrap);
 export const toggleModel = (id, active) => client.post(`/api/degen/models/${id}/toggle`, { active }).then(unwrap);
 export const addWatchlist = (address, note = '') => client.post('/api/degen/watchlist', { address, note }).then(unwrap);
 export const removeWatchlist = (id) => client.delete(`/api/degen/watchlist/${id}`).then(unwrap);

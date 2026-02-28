@@ -31,6 +31,17 @@ import { executeDemo, executeLive } from '../api/signals';
 
 const tabs = ['Overview', 'Scanner', 'Models', 'Pending', 'Demo', 'Risk'];
 
+function TradingViewWidget({ pair }) {
+  const symbol = `BINANCE:${String(pair || 'BTCUSDT').replace(/[^A-Z0-9]/g, '')}`;
+  const src = `https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=${encodeURIComponent(symbol)}&interval=60&hidesidetoolbar=1&symboledit=1&saveimage=0&toolbarbg=f1f3f6&studies=[]&theme=dark&style=1&timezone=Etc%2FUTC&withdateranges=1&allow_symbol_change=0`;
+  return (
+    <div className="card">
+      <h3 className="font-semibold mb-2">TradingView</h3>
+      <iframe title={`TradingView ${pair}`} src={src} className="w-full h-72 rounded-xl border border-[var(--line)] bg-black/30" />
+    </div>
+  );
+}
+
 export default function Perps() {
   const [tab, setTab] = useState('Overview');
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -46,6 +57,7 @@ export default function Perps() {
   });
   const [selectedModelIds, setSelectedModelIds] = useState([]);
   const [selectedPairs, setSelectedPairs] = useState([]);
+  const [selectedPair, setSelectedPair] = useState(() => localStorage.getItem('perps:selected_pair') || 'BTCUSDT');
   const [scanResults, setScanResults] = useState(null);
   const [scanError, setScanError] = useState('');
   const qc = useQueryClient();
@@ -65,16 +77,28 @@ export default function Perps() {
   useEffect(() => {
     if (riskQ.data) setRiskForm((prev) => ({ ...prev, ...riskQ.data }));
   }, [riskQ.data]);
+  const availablePairs = useMemo(
+    () => Array.from(new Set((modelsQ.data || []).map((m) => (m.pair || '').toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean))),
+    [modelsQ.data],
+  );
+
   useEffect(() => {
     const ids = (modelsQ.data || []).map((m) => Number(m.id)).filter(Boolean);
     if (ids.length && selectedModelIds.length === 0) {
       setSelectedModelIds(ids);
     }
-    const pairs = Array.from(new Set((modelsQ.data || []).map((m) => (m.pair || '').toUpperCase()).filter(Boolean)));
-    if (pairs.length && selectedPairs.length === 0) {
-      setSelectedPairs(pairs);
+    if (availablePairs.length && selectedPairs.length === 0) {
+      setSelectedPairs(availablePairs);
     }
-  }, [modelsQ.data]);
+    if (availablePairs.length && !availablePairs.includes(selectedPair)) {
+      setSelectedPair(availablePairs[0]);
+    }
+  }, [modelsQ.data, availablePairs]);
+
+  useEffect(() => {
+    if (!selectedPair) return;
+    localStorage.setItem('perps:selected_pair', selectedPair);
+  }, [selectedPair]);
 
   const scannerM = useMutation({
     mutationFn: runScanner,
@@ -198,7 +222,18 @@ export default function Perps() {
               </div>
             </div>
           </div>
-          <CandlestickChart />
+          <div className="space-y-3">
+            <div className="card !p-3">
+              <p className="text-sm text-[var(--text-muted)] mb-2">Selected Pair</p>
+              <select className="input max-w-60" value={selectedPair} onChange={(e) => setSelectedPair(e.target.value)}>
+                {(availablePairs.length ? availablePairs : ['BTCUSDT']).map((pair) => (
+                  <option key={pair} value={pair}>{pair}</option>
+                ))}
+              </select>
+            </div>
+            <CandlestickChart defaultPair={selectedPair} />
+            <TradingViewWidget pair={selectedPair} />
+          </div>
           <div className="card">
             <h3 className="font-semibold mb-2">Open Positions</h3>
             <div className="text-xs space-y-1 max-h-56 overflow-auto">
@@ -244,11 +279,11 @@ export default function Perps() {
               <div>
                 <p className="text-sm font-medium mb-2">Pairs</p>
                 <div className="flex gap-2 mb-2">
-                  <button className="btn-secondary btn-sm" onClick={() => setSelectedPairs(Array.from(new Set((modelsQ.data || []).map((m) => (m.pair || '').toUpperCase()).filter(Boolean))))}>Select All</button>
+                  <button className="btn-secondary btn-sm" onClick={() => setSelectedPairs(availablePairs)}>Select All</button>
                   <button className="btn-ghost btn-sm" onClick={() => setSelectedPairs([])}>Clear</button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {Array.from(new Set((modelsQ.data || []).map((m) => (m.pair || '').toUpperCase()).filter(Boolean))).map((pair) => {
+                  {availablePairs.map((pair) => {
                     const active = selectedPairs.includes(pair);
                     return (
                       <button

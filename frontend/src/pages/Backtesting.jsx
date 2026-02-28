@@ -120,7 +120,7 @@ export default function Backtesting() {
     const trades = [...(result?.trades || [])];
     return trades.sort((a, b) => {
       if (sortBy === 'pnl') return (b.pnl || 0) - (a.pnl || 0);
-      if (sortBy === 'pnl_percent') return (b.pnl_percent || 0) - (a.pnl_percent || 0);
+      if (sortBy === 'pnl_percent') return ((b.pnl_percent ?? b.pnl_pct) || 0) - ((a.pnl_percent ?? a.pnl_pct) || 0);
       return String(a[sortBy] || '').localeCompare(String(b[sortBy] || ''));
     });
   }, [result, sortBy]);
@@ -240,7 +240,7 @@ export default function Backtesting() {
               <>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {[
-                    ['Total Trades', result.total_trades],
+                    ['Total Trades', Number(result.total_trades ?? result.trades ?? result?.trades?.length ?? 0)],
                     ['Win Rate', `${result.win_rate}%`],
                     ['Total PnL', result.total_pnl],
                     ['Max Drawdown', `${result.max_drawdown}%`],
@@ -302,7 +302,7 @@ export default function Backtesting() {
                       <tbody>
                         {sortedTrades.map((trade) => (
                           <tr key={trade.id} className="border-b border-zinc-800">
-                            <td className="py-2 pr-2">{trade.entry_time}</td><td>{trade.exit_time}</td><td>{trade.pair}</td><td>{trade.direction}</td><td>{trade.entry_price}</td><td>{trade.exit_price}</td><td>{trade.pnl}</td><td>{trade.pnl_percent}%</td><td>{trade.reason}</td>
+                            <td className="py-2 pr-2">{trade.entry_time}</td><td>{trade.exit_time}</td><td>{trade.pair}</td><td>{trade.direction}</td><td>{trade.entry_price}</td><td>{trade.exit_price}</td><td>{trade.pnl}</td><td>{(trade.pnl_percent ?? trade.pnl_pct)}%</td><td>{trade.reason || trade.exit_reason}</td>
                           </tr>
                         ))}
                       </tbody>

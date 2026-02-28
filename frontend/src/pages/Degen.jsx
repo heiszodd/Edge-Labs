@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import TierGuard from '../components/common/TierGuard';
 import {
@@ -7,10 +7,13 @@ import {
   buyDemo,
   buyLive,
   clearDemoLogs,
+  createModel,
+  deleteModel,
   depositDemo,
   exportTrackedWallets,
   getDemo,
   getDemoHistory,
+  getModels,
   getScannerResults,
   getTrackedWallets,
   getWalletBalance,
@@ -18,6 +21,7 @@ import {
   resetDemo,
   runScanner,
   scanContract,
+  toggleModel,
   withdrawDemo,
 } from '../api/degen';
 import { PageWrapper } from '../components/common/PageWrapper';
@@ -26,26 +30,14 @@ const formatNum = (value) => Number(value || 0).toLocaleString(undefined, { maxi
 
 function SafetyReport({ data }) {
   if (!data) return null;
-  if (!data.found) {
-    return (
-      <div className="card">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">❌</span>
-          <div>
-            <p className="font-semibold">Token Not Found</p>
-            <p className="text-sm text-[var(--text-muted)]">{data.error}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!data.found) return <div className="card"><p className="text-sm text-[var(--text-muted)]">{data.error || 'Token not found'}</p></div>;
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="card">
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-xl font-bold">{data.name}</h3>
-            <p className="text-[var(--text-muted)] font-mono">${data.symbol} · {data.ca.slice(0, 8)}…</p>
+            <p className="text-[var(--text-muted)] font-mono">${data.symbol} · {data.ca.slice(0, 8)}...</p>
           </div>
           <div className={`grade-${data.grade} text-2xl px-4 py-2`}>{data.grade}</div>
         </div>
@@ -55,9 +47,6 @@ function SafetyReport({ data }) {
             <div style={{ width: `${data.safety_score}%` }} className={`h-full rounded-full ${data.safety_score >= 70 ? 'bg-emerald-500' : data.safety_score >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`} />
           </div>
         </div>
-        {data.warnings?.length > 0 && (
-          <div className="mt-4 space-y-2">{data.warnings.map((w, i) => <div key={i} className="text-sm text-amber-400">{w}</div>)}</div>
-        )}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
@@ -69,40 +58,27 @@ function SafetyReport({ data }) {
           ['Dev Wallet', `${Number(data.dev_wallet_pct || 0).toFixed(1)}%`],
           ['B/S Ratio', Number(data.bs_ratio || 0).toFixed(2)],
           ['Rug Score', `${data.rug_score}/100`],
-        ].map(([k, v]) => (
-          <div key={k} className="card text-center">
-            <p className="stat-label">{k}</p>
-            <p className="stat-value text-base">{v}</p>
-          </div>
-        ))}
+        ].map(([k, v]) => <div key={k} className="card text-center"><p className="stat-label">{k}</p><p className="stat-value text-base">{v}</p></div>)}
       </div>
-      <div className="card">
-        <h4 className="font-semibold mb-3">Safety Checklist</h4>
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          {[
-            ['Mint Disabled', data.mint_disabled],
-            ['Freeze Disabled', data.freeze_disabled],
-            ['LP Locked', data.lp_locked],
-            ['Verified', data.verified],
-            ['Not Honeypot', !data.is_honeypot],
-            ['Low Dev %', Number(data.dev_wallet_pct || 0) < 15],
-          ].map(([label, pass]) => (
-            <div key={label} className={`flex items-center gap-2 ${pass ? 'text-emerald-400' : 'text-rose-400'}`}>
-              <span>{pass ? '✓' : '✕'}</span> {label}
-            </div>
-          ))}
-        </div>
-      </div>
-      {['S', 'A', 'B'].includes(data.grade) && (
-        <div className="flex gap-3">
-          <button className="btn-primary flex-1">Buy Live (Pro)</button>
-          <button className="btn-secondary flex-1">Buy Demo</button>
-          <a href={data.dex_url} target="_blank" rel="noreferrer" className="btn-secondary">DexScreener ↗</a>
-        </div>
-      )}
     </div>
   );
 }
+
+const DEFAULT_MODEL = {
+  name: '',
+  description: '',
+  active: true,
+  min_score: 70,
+  min_mcap_usd: 0,
+  max_mcap_usd: 10000000,
+  min_liquidity_usd: 10000,
+  max_age_minutes: 1440,
+  min_holder_count: 50,
+  max_rug_score: 50,
+  position_size_usd: 50,
+  auto_buy: false,
+  auto_buy_threshold: 80,
+};
 
 export default function Degen() {
   const qc = useQueryClient();
@@ -114,6 +90,8 @@ export default function Degen() {
   const [caInput, setCaInput] = useState('');
   const [scanReport, setScanReport] = useState(null);
   const [caError, setCaError] = useState('');
+  const [modelForm, setModelForm] = useState(DEFAULT_MODEL);
+  const [modelError, setModelError] = useState('');
 
   const demoQ = useQuery({ queryKey: ['degen', 'demo'], queryFn: getDemo, staleTime: 30_000 });
   const demoHistoryQ = useQuery({ queryKey: ['degen', 'demo-history'], queryFn: getDemoHistory, staleTime: 30_000 });
@@ -121,8 +99,22 @@ export default function Degen() {
   const walletQ = useQuery({ queryKey: ['degen', 'wallet'], queryFn: getWalletBalance, staleTime: 15_000 });
   const watchQ = useQuery({ queryKey: ['degen', 'watchlist'], queryFn: getWatchlist, staleTime: 30_000 });
   const trackedQ = useQuery({ queryKey: ['degen', 'tracked'], queryFn: getTrackedWallets, staleTime: 30_000 });
+  const modelsQ = useQuery({ queryKey: ['degen', 'models'], queryFn: getModels, staleTime: 30_000 });
+
+  const activeModelCount = useMemo(() => (modelsQ.data || []).filter((m) => m.active).length, [modelsQ.data]);
 
   const scannerM = useMutation({ mutationFn: runScanner, onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'scanner'] }) });
+  const createModelM = useMutation({
+    mutationFn: createModel,
+    onSuccess: async () => {
+      setModelForm(DEFAULT_MODEL);
+      setModelError('');
+      await qc.invalidateQueries({ queryKey: ['degen', 'models'] });
+    },
+    onError: (err) => setModelError(err?.response?.data?.detail || 'Could not create model'),
+  });
+  const toggleModelM = useMutation({ mutationFn: ({ id, active }) => toggleModel(id, active), onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'models'] }) });
+  const deleteModelM = useMutation({ mutationFn: deleteModel, onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'models'] }) });
   const liveBuyM = useMutation({ mutationFn: ({ token, amount, slip }) => buyLive(token, amount, slip, true) });
   const demoBuyM = useMutation({ mutationFn: ({ token, amount, slip }) => buyDemo(token, amount, slip), onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'demo'] }) });
   const watchM = useMutation({ mutationFn: (token) => addWatchlist(token), onSuccess: () => qc.invalidateQueries({ queryKey: ['degen', 'watchlist'] }) });
@@ -141,8 +133,67 @@ export default function Degen() {
         <p className="text-sm text-[var(--text-muted)]">SOL: {walletQ.data?.sol_balance ?? 0} | Tokens: {walletQ.data?.token_count ?? 0}</p>
       </div>
 
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Degen Model Builder</h2>
+          <span className="badge badge-info">Active models: {activeModelCount}</span>
+        </div>
+        <div className="grid md:grid-cols-4 gap-2">
+          <input className="input" placeholder="Model name" value={modelForm.name} onChange={(e) => setModelForm((p) => ({ ...p, name: e.target.value }))} />
+          <input className="input" type="number" value={modelForm.min_score} onChange={(e) => setModelForm((p) => ({ ...p, min_score: Number(e.target.value || 0) }))} placeholder="Min score" />
+          <input className="input" type="number" value={modelForm.min_liquidity_usd} onChange={(e) => setModelForm((p) => ({ ...p, min_liquidity_usd: Number(e.target.value || 0) }))} placeholder="Min liquidity" />
+          <input className="input" type="number" value={modelForm.max_rug_score} onChange={(e) => setModelForm((p) => ({ ...p, max_rug_score: Number(e.target.value || 0) }))} placeholder="Max rug score" />
+          <input className="input" type="number" value={modelForm.min_mcap_usd} onChange={(e) => setModelForm((p) => ({ ...p, min_mcap_usd: Number(e.target.value || 0) }))} placeholder="Min mcap" />
+          <input className="input" type="number" value={modelForm.max_mcap_usd} onChange={(e) => setModelForm((p) => ({ ...p, max_mcap_usd: Number(e.target.value || 0) }))} placeholder="Max mcap" />
+          <input className="input" type="number" value={modelForm.max_age_minutes} onChange={(e) => setModelForm((p) => ({ ...p, max_age_minutes: Number(e.target.value || 0) }))} placeholder="Max age mins" />
+          <input className="input" type="number" value={modelForm.min_holder_count} onChange={(e) => setModelForm((p) => ({ ...p, min_holder_count: Number(e.target.value || 0) }))} placeholder="Min holders" />
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={modelForm.active} onChange={(e) => setModelForm((p) => ({ ...p, active: e.target.checked }))} />
+            Active
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={modelForm.auto_buy} onChange={(e) => setModelForm((p) => ({ ...p, auto_buy: e.target.checked }))} />
+            Auto-buy
+          </label>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              if (!modelForm.name || modelForm.name.trim().length < 2) {
+                setModelError('Model name must be at least 2 characters');
+                return;
+              }
+              createModelM.mutate(modelForm);
+            }}
+            disabled={createModelM.isPending}
+          >
+            {createModelM.isPending ? 'Saving...' : 'Save Model'}
+          </button>
+        </div>
+        {modelError && <div className="badge badge-danger">{modelError}</div>}
+        <div className="space-y-2">
+          {(modelsQ.data || []).map((row) => (
+            <div key={row.id} className="card !p-3 flex items-center gap-2">
+              <div className="flex-1">
+                <p className="font-medium">{row.name}</p>
+                <p className="text-xs text-[var(--text-muted)]">Score≥{row.min_score} · Liq≥{row.min_liquidity_usd} · Rug≤{row.max_rug_score}</p>
+              </div>
+              <button className="btn-secondary btn-sm" onClick={() => toggleModelM.mutate({ id: row.id, active: !row.active })}>{row.active ? 'Disable' : 'Enable'}</button>
+              <button className="btn-danger btn-sm" onClick={() => deleteModelM.mutate(row.id)}>Delete</button>
+            </div>
+          ))}
+          {(modelsQ.data || []).length === 0 && <p className="text-sm text-[var(--text-muted)]">No degen models yet. Create one to enable scanner execution.</p>}
+        </div>
+      </div>
+
       <TierGuard tier="pro">
-        <div className="card"><button className="btn-primary" onClick={() => scannerM.mutate()}>{scannerM.isPending ? 'Running...' : 'Run Scanner'}</button></div>
+        <div className="card space-y-2">
+          <button className="btn-primary" onClick={() => scannerM.mutate()} disabled={scannerM.isPending || activeModelCount === 0}>
+            {scannerM.isPending ? 'Running...' : 'Run Scanner'}
+          </button>
+          {activeModelCount === 0 && <p className="text-sm text-[var(--text-muted)]">Scanner requires at least one active degen model.</p>}
+        </div>
       </TierGuard>
 
       <div className="card space-y-3">

@@ -65,7 +65,22 @@ def get_run(run_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="run_not_found")
     result = run.get("result") if isinstance(run.get("result"), dict) else run.get("results_data") if isinstance(run.get("results_data"), dict) else {}
     trades = db._select_many("backtest_trades", run_id=run_id, user_id=user["id"], order="id")
-    result["trades"] = trades or result.get("trades", [])
+    normalized_trades = []
+    for row in trades or []:
+        normalized_trades.append(
+            {
+                **row,
+                "pnl_percent": row.get("pnl_percent", row.get("pnl_pct", 0)),
+                "reason": row.get("reason", row.get("exit_reason")),
+            }
+        )
+    result["trades"] = normalized_trades or result.get("trades", [])
+    result["total_trades"] = int(result.get("total_trades", run.get("total_trades", len(result["trades"]))))
+    result["wins"] = int(result.get("wins", len([t for t in result["trades"] if float(t.get("pnl", 0) or 0) > 0])))
+    result["losses"] = int(result.get("losses", len([t for t in result["trades"] if float(t.get("pnl", 0) or 0) < 0])))
+    if "pnl_summary" not in result:
+        total_pnl = float(result.get("total_pnl", 0) or 0)
+        result["pnl_summary"] = {"gross": total_pnl, "net": total_pnl}
     return ok(result)
 
 

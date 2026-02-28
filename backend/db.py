@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -590,6 +591,42 @@ def get_poly_address(user_id) -> str:
 
 def save_poly_address(user_id, address):
     _upsert("encrypted_keys", {"user_id": user_id, "key_name": "poly_address", "encrypted": address, "label": "poly address"}, on_conflict="user_id,key_name")
+
+
+def save_wallet_challenge(user_id: str, chain: str, payload: dict) -> bool:
+    key_name = f"{chain}_wallet_challenge"
+    return save_encrypted_key(user_id, key_name, json.dumps(payload), f"{chain} wallet challenge")
+
+
+def get_wallet_challenge(user_id: str, chain: str) -> dict:
+    key_name = f"{chain}_wallet_challenge"
+    raw = get_encrypted_key(user_id, key_name)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+def clear_wallet_challenge(user_id: str, chain: str) -> None:
+    _delete("encrypted_keys", user_id=user_id, key_name=f"{chain}_wallet_challenge")
+
+
+def save_wallet_verification(user_id: str, chain: str, payload: dict) -> bool:
+    key_name = f"{chain}_wallet_meta"
+    return save_encrypted_key(user_id, key_name, json.dumps(payload), f"{chain} wallet metadata")
+
+
+def get_wallet_verification(user_id: str, chain: str) -> dict:
+    key_name = f"{chain}_wallet_meta"
+    raw = get_encrypted_key(user_id, key_name)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
 
 
 def get_prediction_models(user_id, active_only=False) -> list:

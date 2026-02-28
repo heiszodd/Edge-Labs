@@ -36,8 +36,8 @@ export default function TelegramLogin({ onSuccess, onError }) {
 
   if (!botUsername) {
     return (
-      <div className="card border-amber-500/20">
-        <p className="text-amber-400 text-sm">⚠ VITE_TELEGRAM_BOT_USERNAME not configured</p>
+      <div className="card border-zinc-500/20">
+        <p className="text-sm text-[var(--text-muted)]">Telegram bot not available yet.</p>
       </div>
     );
   }

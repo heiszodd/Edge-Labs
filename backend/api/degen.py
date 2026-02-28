@@ -4,7 +4,6 @@ import csv
 import io
 import logging
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
@@ -28,6 +27,22 @@ class AddressBody(BaseModel):
 
 class ToggleBody(BaseModel):
     active: bool
+
+
+class DegenModelBody(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    description: str = ""
+    active: bool = False
+    min_score: float = Field(default=65, ge=0, le=100)
+    min_mcap_usd: float = Field(default=0, ge=0)
+    max_mcap_usd: float = Field(default=10_000_000, ge=0)
+    min_liquidity_usd: float = Field(default=10_000, ge=0)
+    max_age_minutes: int = Field(default=1_440, ge=1, le=43_200)
+    min_holder_count: int = Field(default=50, ge=0)
+    max_rug_score: float = Field(default=50, ge=0, le=100)
+    position_size_usd: float = Field(default=50, ge=1)
+    auto_buy: bool = False
+    auto_buy_threshold: float = Field(default=80, ge=0, le=100)
 
 
 class BuyBody(BaseModel):
@@ -135,14 +150,20 @@ def get_models(user: dict = Depends(get_current_user)):
 
 
 @router.post("/models")
-def create_model(payload: dict[str, Any], user: dict = Depends(get_current_user)):
-    mid = db.save_degen_model(user["id"], payload)
+def create_model(payload: DegenModelBody, user: dict = Depends(get_current_user)):
+    body = payload.model_dump()
+    if body["max_mcap_usd"] < body["min_mcap_usd"]:
+        raise HTTPException(status_code=400, detail="max_mcap_must_be_gte_min_mcap")
+    mid = db.save_degen_model(user["id"], body)
     return ok({"id": mid})
 
 
 @router.put("/models/{model_id}")
-def update_model(model_id: int, payload: dict[str, Any], user: dict = Depends(get_current_user)):
-    db._update("degen_models", payload, id=model_id, user_id=user["id"])
+def update_model(model_id: int, payload: DegenModelBody, user: dict = Depends(get_current_user)):
+    body = payload.model_dump()
+    if body["max_mcap_usd"] < body["min_mcap_usd"]:
+        raise HTTPException(status_code=400, detail="max_mcap_must_be_gte_min_mcap")
+    db._update("degen_models", body, id=model_id, user_id=user["id"])
     return ok({"id": model_id})
 
 

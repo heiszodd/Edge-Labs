@@ -10,6 +10,10 @@ export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = 
   const [pair, setPair] = useState(defaultPair);
   const [tf, setTf] = useState(defaultTf);
 
+  useEffect(() => {
+    if (defaultPair) setPair(String(defaultPair).toUpperCase());
+  }, [defaultPair]);
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['ohlcv', pair, tf],
     queryFn: () => getOHLCV(pair, tf, 200),
