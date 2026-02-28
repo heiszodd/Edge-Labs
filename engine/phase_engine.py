@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from backend import db
@@ -9,6 +10,17 @@ from engine.ohlcv_cache import fetch_candles, get_htf
 from engine.rules import RULE_REGISTRY, evaluate_rule
 
 log = logging.getLogger(__name__)
+
+
+def _normalize_pair(value: str) -> str:
+    raw = str(value or "").upper().strip()
+    raw = raw.replace("/", "").replace("-", "").replace("_", "").replace(":", "")
+    raw = re.sub(r"[^A-Z0-9]", "", raw)
+    if raw.endswith("PERP"):
+        raw = raw[:-4]
+    if raw and not raw.endswith(("USDT", "BUSD", "USDC", "FDUSD")):
+        raw = f"{raw}USDT"
+    return raw or "BTCUSDT"
 
 
 def _rule_name(rule) -> str:
@@ -65,7 +77,7 @@ async def evaluate_model(model: dict, candles: list, user_id: str) -> dict:
     """
     try:
         timeframe = str(model.get("timeframe", "1h"))
-        pair = str(model.get("pair", "BTCUSDT")).upper()
+        pair = _normalize_pair(str(model.get("pair", "BTCUSDT")))
         htf_candles = await fetch_candles(pair, get_htf(timeframe), limit=120)
         direction = _detect_direction(candles)
         context = {
@@ -175,7 +187,7 @@ async def evaluate_model(model: dict, candles: list, user_id: str) -> dict:
 
 
 async def run_model(model, user_id, context) -> dict:
-    pair = str(model.get("pair", "BTCUSDT")).upper()
+    pair = _normalize_pair(str(model.get("pair", "BTCUSDT")))
     timeframe = str(model.get("timeframe", "1h"))
     candles = await fetch_candles(pair, timeframe, limit=120)
     if not candles:

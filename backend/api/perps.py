@@ -81,6 +81,17 @@ def _parse_iso(value: str | None) -> datetime:
     return datetime.fromisoformat(raw.replace("Z", "+00:00"))
 
 
+def _normalize_pair(value: str | None) -> str:
+    raw = str(value or "").upper().strip()
+    raw = raw.replace("/", "").replace("-", "").replace("_", "").replace(":", "")
+    raw = re.sub(r"[^A-Z0-9]", "", raw)
+    if raw.endswith("PERP"):
+        raw = raw[:-4]
+    if raw and not raw.endswith(("USDT", "BUSD", "USDC", "FDUSD")):
+        raw = f"{raw}USDT"
+    return raw or "BTCUSDT"
+
+
 def _normalize_order_status(raw: str) -> str:
     value = str(raw or "").lower()
     if "fill" in value and "partial" in value:
@@ -301,10 +312,10 @@ async def run_scanner(body: ScannerRunBody | None = None, user: dict = Depends(r
         if not selected:
             return {"success": True, "signals_found": 0, "message": "No selected models", "results": []}
 
-        selected_pairs = [p.upper() for p in (payload.pairs or []) if p]
+        selected_pairs = [_normalize_pair(p) for p in (payload.pairs or []) if p]
         results = []
         for model in selected:
-            model_pairs = selected_pairs if (selected_pairs and not payload.include_all_pairs) else [str(model.get("pair") or "BTCUSDT").upper()]
+            model_pairs = selected_pairs if (selected_pairs and not payload.include_all_pairs) else [_normalize_pair(str(model.get("pair") or "BTCUSDT"))]
             for pair in model_pairs:
                 model_copy = {**model, "pair": pair}
                 signal = await run_model(model_copy, user_id, None)
