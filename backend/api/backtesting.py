@@ -26,6 +26,13 @@ class BacktestBody(BaseModel):
 
 @router.post("/run")
 async def run_backtest(body: BacktestBody, user: dict = Depends(require_tier("pro"))):
+    try:
+        start_dt = datetime.fromisoformat(body.start_date)
+        end_dt = datetime.fromisoformat(body.end_date)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_date_format:use_YYYY-MM-DD")
+    if end_dt <= start_dt:
+        raise HTTPException(status_code=400, detail="invalid_date_range:end_date_must_be_after_start_date")
     model = db.get_model(body.model_id, user["id"])
     if not model:
         raise HTTPException(status_code=404, detail="model_not_found")
@@ -43,7 +50,7 @@ async def run_backtest(body: BacktestBody, user: dict = Depends(require_tier("pr
             "results_data": {},
         },
     )
-    await run_backtest_engine(
+    result = await run_backtest_engine(
         run_id,
         user["id"],
         model,
@@ -55,7 +62,9 @@ async def run_backtest(body: BacktestBody, user: dict = Depends(require_tier("pr
         slippage_bps=body.slippage_bps,
         commission_pct=body.commission_pct,
     )
-    return ok({"run_id": run_id})
+    if isinstance(result, dict) and result.get("status") == "failed":
+        return ok({"run_id": run_id, "status": "failed", "error": result.get("error")})
+    return ok({"run_id": run_id, "status": "done"})
 
 
 @router.get("/{run_id}")
@@ -81,6 +90,9 @@ def get_run(run_id: int, user: dict = Depends(get_current_user)):
     if "pnl_summary" not in result:
         total_pnl = float(result.get("total_pnl", 0) or 0)
         result["pnl_summary"] = {"gross": total_pnl, "net": total_pnl}
+    result["status"] = run.get("status", result.get("status", "unknown"))
+    if run.get("error"):
+        result["error"] = run.get("error")
     return ok(result)
 
 

@@ -60,6 +60,7 @@ export default function Perps() {
   const [selectedPair, setSelectedPair] = useState(() => localStorage.getItem('perps:selected_pair') || 'BTCUSDT');
   const [scanResults, setScanResults] = useState(null);
   const [scanError, setScanError] = useState('');
+  const [builderSeed, setBuilderSeed] = useState(null);
   const qc = useQueryClient();
 
   const accountQ = useQuery({ queryKey: ['perps', 'account'], queryFn: () => getAccount(7), refetchInterval: 7000 });
@@ -231,7 +232,6 @@ export default function Perps() {
                 ))}
               </select>
             </div>
-            <CandlestickChart defaultPair={selectedPair} />
             <TradingViewWidget pair={selectedPair} />
           </div>
           <div className="card">
@@ -330,6 +330,7 @@ export default function Perps() {
                     </div>
                     <p className="text-xs text-[var(--text-muted)]">Grade {r.quality_grade} · Score {r.quality_score} · {r.direction}</p>
                     {r.error && <p className="text-xs text-danger">{r.error}</p>}
+                    {r.ohlcv_detail && <p className="text-[11px] text-[var(--text-muted)]">OHLCV: {r.ohlcv_provider || '-'} ({r.ohlcv_status_code || '-'}) {r.ohlcv_detail}</p>}
                   </div>
                 ))}
               </div>
@@ -351,6 +352,24 @@ export default function Perps() {
             <p className="text-sm text-[var(--text-muted)]">Advanced Model Builder only</p>
             <button className="btn-secondary" onClick={() => setBuilderOpen(true)}>Open Advanced Builder</button>
           </div>
+          <CandlestickChart
+            defaultPair={selectedPair}
+            onUseCandle={({ pair, timeframe, candle, stats }) => {
+              setBuilderSeed({
+                pair,
+                timeframe,
+                seedRuleId: 'candle_confirm',
+                minQualityScore: stats.body > 0 ? 70 : 65,
+                autoThreshold: stats.range > 0 ? 80 : 75,
+                seedContext: {
+                  pair,
+                  timeframe,
+                  timestamp: new Date(Number(candle.timestamp)).toLocaleString(),
+                },
+              });
+              setBuilderOpen(true);
+            }}
+          />
           {createModelM.error && <div className="text-sm text-danger">{createModelM.error?.response?.data?.detail || 'Model save failed'}</div>}
           <div className="grid md:grid-cols-2 gap-4">
             {(modelsQ.data || []).map((model) => <ModelCard key={model.id} model={model} />)}
@@ -409,6 +428,7 @@ export default function Perps() {
         <div className="modal-overlay">
           <div className="modal !max-w-[95vw] !w-[1300px] !p-0 overflow-hidden">
             <AdvancedModelBuilder
+              initialConfig={builderSeed}
               onCancel={() => setBuilderOpen(false)}
               onSave={(model) => {
                 const payload = {

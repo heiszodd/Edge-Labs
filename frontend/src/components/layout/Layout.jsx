@@ -5,11 +5,13 @@ import Topbar from './Topbar';
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { pathname } = useLocation();
   const [show, setShow] = useState(true);
 
   useEffect(() => {
     setShow(false);
+    setMobileSidebarOpen(false);
     const t = setTimeout(() => setShow(true), 50);
     return () => clearTimeout(t);
   }, [pathname]);
@@ -20,8 +22,31 @@ export default function Layout() {
         <Sidebar collapsed={!sidebarOpen} onToggle={() => setSidebarOpen((v) => !v)} />
       </aside>
 
+      <div className={`md:hidden fixed inset-0 z-[70] transition-opacity duration-200 ${mobileSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}>
+        <button
+          className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
+          aria-label="Close sidebar overlay"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+        <aside
+          className={`absolute left-0 top-0 h-full w-72 max-w-[85vw] border-r border-[var(--border)] bg-[var(--bg-card)] shadow-2xl transition-transform duration-250 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          role="dialog"
+          aria-modal="true"
+        >
+          <Sidebar collapsed={false} onToggle={() => setMobileSidebarOpen(false)} onNavigate={() => setMobileSidebarOpen(false)} />
+        </aside>
+      </div>
+
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar onMenuClick={() => setSidebarOpen((v) => !v)} />
+        <Topbar
+          onMenuClick={() => {
+            if (window.innerWidth < 768) {
+              setMobileSidebarOpen((v) => !v);
+            } else {
+              setSidebarOpen((v) => !v);
+            }
+          }}
+        />
         <main className="flex-1 overflow-y-auto p-5 md:p-7 pb-24 md:pb-7">
           <div
             className="max-w-7xl mx-auto"
@@ -37,7 +62,7 @@ export default function Layout() {
       </div>
 
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[var(--bg-card)]/90 backdrop-blur-md border-t border-[var(--border)] flex items-center justify-around px-2 py-2"
+        className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-[var(--bg-card)]/90 backdrop-blur-md border-t border-[var(--border)] flex items-center justify-around px-2 py-2"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         {[

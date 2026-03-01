@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import TierGuard from '../components/common/TierGuard';
+import DegenAdvancedModelBuilder from '../components/models/DegenAdvancedModelBuilder';
 import {
   addTrackedWallet,
   addWatchlist,
@@ -90,7 +91,7 @@ export default function Degen() {
   const [caInput, setCaInput] = useState('');
   const [scanReport, setScanReport] = useState(null);
   const [caError, setCaError] = useState('');
-  const [modelForm, setModelForm] = useState(DEFAULT_MODEL);
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [modelError, setModelError] = useState('');
 
   const demoQ = useQuery({ queryKey: ['degen', 'demo'], queryFn: getDemo, staleTime: 30_000 });
@@ -138,38 +139,9 @@ export default function Degen() {
           <h2 className="font-semibold">Degen Model Builder</h2>
           <span className="badge badge-info">Active models: {activeModelCount}</span>
         </div>
-        <div className="grid md:grid-cols-4 gap-2">
-          <input className="input" placeholder="Model name" value={modelForm.name} onChange={(e) => setModelForm((p) => ({ ...p, name: e.target.value }))} />
-          <input className="input" type="number" value={modelForm.min_score} onChange={(e) => setModelForm((p) => ({ ...p, min_score: Number(e.target.value || 0) }))} placeholder="Min score" />
-          <input className="input" type="number" value={modelForm.min_liquidity_usd} onChange={(e) => setModelForm((p) => ({ ...p, min_liquidity_usd: Number(e.target.value || 0) }))} placeholder="Min liquidity" />
-          <input className="input" type="number" value={modelForm.max_rug_score} onChange={(e) => setModelForm((p) => ({ ...p, max_rug_score: Number(e.target.value || 0) }))} placeholder="Max rug score" />
-          <input className="input" type="number" value={modelForm.min_mcap_usd} onChange={(e) => setModelForm((p) => ({ ...p, min_mcap_usd: Number(e.target.value || 0) }))} placeholder="Min mcap" />
-          <input className="input" type="number" value={modelForm.max_mcap_usd} onChange={(e) => setModelForm((p) => ({ ...p, max_mcap_usd: Number(e.target.value || 0) }))} placeholder="Max mcap" />
-          <input className="input" type="number" value={modelForm.max_age_minutes} onChange={(e) => setModelForm((p) => ({ ...p, max_age_minutes: Number(e.target.value || 0) }))} placeholder="Max age mins" />
-          <input className="input" type="number" value={modelForm.min_holder_count} onChange={(e) => setModelForm((p) => ({ ...p, min_holder_count: Number(e.target.value || 0) }))} placeholder="Min holders" />
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={modelForm.active} onChange={(e) => setModelForm((p) => ({ ...p, active: e.target.checked }))} />
-            Active
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={modelForm.auto_buy} onChange={(e) => setModelForm((p) => ({ ...p, auto_buy: e.target.checked }))} />
-            Auto-buy
-          </label>
-          <button
-            className="btn-primary"
-            onClick={() => {
-              if (!modelForm.name || modelForm.name.trim().length < 2) {
-                setModelError('Model name must be at least 2 characters');
-                return;
-              }
-              createModelM.mutate(modelForm);
-            }}
-            disabled={createModelM.isPending}
-          >
-            {createModelM.isPending ? 'Saving...' : 'Save Model'}
-          </button>
+        <div className="card !p-3 flex items-center justify-between">
+          <p className="text-sm text-[var(--text-muted)]">Use Advanced Builder for detailed risk and auto-trade controls.</p>
+          <button className="btn-primary" onClick={() => setBuilderOpen(true)}>Open Advanced Builder</button>
         </div>
         {modelError && <div className="badge badge-danger">{modelError}</div>}
         <div className="space-y-2">
@@ -287,6 +259,30 @@ export default function Degen() {
               <button className="btn-ghost" onClick={() => setSelected(null)}>Cancel</button>
               <button className="btn-ghost" onClick={() => watchM.mutate(selected.token_address)}>Whitelist</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {builderOpen && (
+        <div className="modal-overlay">
+          <div className="modal !max-w-[95vw] !w-[1100px] !p-0 overflow-hidden">
+            <DegenAdvancedModelBuilder
+              initialModel={DEFAULT_MODEL}
+              onCancel={() => setBuilderOpen(false)}
+              onSave={(payload) => {
+                if (!payload.name || payload.name.trim().length < 2) {
+                  setModelError('Model name must be at least 2 characters');
+                  return;
+                }
+                createModelM.mutate(payload, {
+                  onSuccess: () => {
+                    setModelError('');
+                    setBuilderOpen(false);
+                  },
+                  onError: (err) => setModelError(err?.response?.data?.detail || 'Could not create model'),
+                });
+              }}
+            />
           </div>
         </div>
       )}

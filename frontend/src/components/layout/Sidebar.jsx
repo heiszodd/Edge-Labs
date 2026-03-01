@@ -13,7 +13,7 @@ const NAV = [
   { href: '/settings', icon: 'S', label: 'Settings' },
 ];
 
-export default function Sidebar({ collapsed, onToggle }) {
+export default function Sidebar({ collapsed, onToggle, onNavigate }) {
   const loc = useLocation();
   const user = useAuthStore((s) => s.user);
   const tier = useAuthStore((s) => s.tier);
@@ -40,6 +40,7 @@ export default function Sidebar({ collapsed, onToggle }) {
             <Link
               key={item.href}
               to={item.href}
+              onClick={() => onNavigate?.()}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 ${collapsed ? 'justify-center' : ''} ${active ? 'bg-signal-500/10 text-signal-400' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'}`}
               title={collapsed ? item.label : ''}
             >

@@ -19,7 +19,7 @@ from engine.hyperliquid.account_reader import (
     fetch_positions_with_prices,
     fetch_trade_history,
 )
-from engine.ohlcv_cache import fetch_candles
+from engine.ohlcv_cache import fetch_candles_detailed
 from engine.phase_engine import run_model
 
 router = APIRouter(prefix="/api/perps", tags=["perps"])
@@ -244,18 +244,30 @@ async def get_ohlcv(
     limit: int = Query(100, ge=1, le=500),
     user: dict = Depends(get_current_user),
 ):
-    candles = await fetch_candles(pair, timeframe, limit)
+    detail = await fetch_candles_detailed(pair, timeframe, limit)
+    candles = detail.get("candles", [])
     if not candles:
         return JSONResponse(
             status_code=200,
             content={
                 "candles": [],
-                "error": f"Could not fetch data for {pair} {timeframe}",
-                "pair": pair,
-                "timeframe": timeframe,
+                "error": detail.get("error") or f"Could not fetch data for {pair} {timeframe}",
+                "pair": detail.get("pair") or pair,
+                "timeframe": detail.get("timeframe") or timeframe,
+                "provider": detail.get("provider"),
+                "status_code": detail.get("status_code"),
             },
         )
-    return ok({"pair": pair, "timeframe": timeframe, "candles": candles, "count": len(candles)})
+    return ok(
+        {
+            "pair": detail.get("pair") or pair,
+            "timeframe": detail.get("timeframe") or timeframe,
+            "candles": candles,
+            "count": len(candles),
+            "provider": detail.get("provider"),
+            "source": detail.get("source"),
+        }
+    )
 
 
 @router.get("/models")
@@ -332,6 +344,9 @@ async def run_scanner(body: ScannerRunBody | None = None, user: dict = Depends(r
                         "direction": signal.get("direction", "neutral"),
                         "signal_id": signal.get("id"),
                         "error": signal.get("error"),
+                        "ohlcv_provider": signal.get("ohlcv_provider"),
+                        "ohlcv_status_code": signal.get("ohlcv_status_code"),
+                        "ohlcv_detail": signal.get("ohlcv_detail"),
                     }
                 )
 

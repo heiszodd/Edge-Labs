@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { connectWalletManual, disconnectWallet, getWalletStatus, requestWalletChallenge, verifyWalletOwnership } from '../api/wallets';
-import { getSettings, saveSettings } from '../api/users';
+import { generateTelegramLinkCode, getSettings, saveSettings } from '../api/users';
 import { saveAlertSettings } from '../api/alerts';
 import apiClient from '../api/client';
 import TelegramLogin from '../components/common/TelegramLogin';
@@ -26,7 +26,9 @@ export default function Settings() {
   const [alerts, setAlerts] = useState({ alert_telegram: true, alert_email: false, alert_web_push: false });
   const [statusMessage, setStatusMessage] = useState('');
   const [telegramMessage, setTelegramMessage] = useState('');
+  const [telegramToken, setTelegramToken] = useState('');
   const qc = useQueryClient();
+  const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME;
 
   const statusQ = useQuery({ queryKey: ['wallets', 'status'], queryFn: getWalletStatus, staleTime: 30_000 });
   const settingsQ = useQuery({ queryKey: ['users', 'settings'], queryFn: getSettings, staleTime: 30_000 });
@@ -55,6 +57,18 @@ export default function Settings() {
   const tgUnlinkM = useMutation({
     mutationFn: () => apiClient.post('/api/auth/telegram/disconnect').then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['auth', 'me'] }),
+  });
+  const tgLinkCodeM = useMutation({
+    mutationFn: generateTelegramLinkCode,
+    onSuccess: (data) => {
+      const token = data?.token || '';
+      setTelegramToken(token);
+      if (botUsername && token) {
+        window.open(`https://t.me/${botUsername}?start=${token}`, '_blank', 'noopener,noreferrer');
+      }
+      setTelegramMessage(token ? `Link token generated: ${token}` : 'Could not generate Telegram link token');
+    },
+    onError: (err) => setTelegramMessage(err?.response?.data?.detail || 'Could not generate Telegram link token'),
   });
   const manualConnectM = useMutation({
     mutationFn: ({ chain, address }) => connectWalletManual(chain, address),
@@ -222,6 +236,17 @@ export default function Settings() {
                 }}
                 onError={(msg) => setTelegramMessage(msg)}
               />
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="btn-secondary btn-sm" onClick={() => tgLinkCodeM.mutate()} disabled={tgLinkCodeM.isPending}>
+                  {tgLinkCodeM.isPending ? 'Generating...' : 'Generate Telegram Link Token'}
+                </button>
+                {telegramToken && <span className="badge badge-info">Token: {telegramToken}</span>}
+              </div>
+              {!botUsername && (
+                <p className="text-xs text-[var(--text-muted)]">
+                  Widget unavailable. Use generated token with your bot integration or set <code>VITE_TELEGRAM_BOT_USERNAME</code>.
+                </p>
+              )}
             </>
           )}
           {meQ.data?.telegram_linked && (

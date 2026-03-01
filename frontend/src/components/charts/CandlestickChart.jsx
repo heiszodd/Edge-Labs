@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createChart } from 'lightweight-charts';
 import { getOHLCV } from '../../api/perps';
 
-export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = '1h', height = 384 }) {
+export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = '1h', height = 384, onUseCandle }) {
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
   const containerRef = useRef(null);
+  const candlesRef = useRef([]);
   const [pair, setPair] = useState(defaultPair);
   const [tf, setTf] = useState(defaultTf);
+  const [selectedCandle, setSelectedCandle] = useState(null);
 
   useEffect(() => {
     if (defaultPair) setPair(String(defaultPair).toUpperCase());
@@ -39,12 +41,18 @@ export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = 
     });
     chartRef.current = chart;
     seriesRef.current = series;
+    chart.subscribeClick((param) => {
+      if (!param?.time || !seriesRef.current || !candlesRef.current?.length) return;
+      const match = (candlesRef.current || []).find((c) => Math.floor(Number(c.timestamp) / 1000) === Number(param.time));
+      if (match) setSelectedCandle(match);
+    });
 
     return () => chart.remove();
   }, [height]);
 
   useEffect(() => {
     if (!seriesRef.current || !data?.candles?.length) return;
+    candlesRef.current = data.candles || [];
     const formatted = data.candles.map((c) => ({
       time: Math.floor(Number(c.timestamp) / 1000),
       open: Number(c.open),
@@ -56,6 +64,18 @@ export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = 
   }, [data]);
 
   const noData = !isLoading && (!data?.candles?.length || data?.error);
+  const candleStats = useMemo(() => {
+    if (!selectedCandle) return null;
+    const open = Number(selectedCandle.open || 0);
+    const close = Number(selectedCandle.close || 0);
+    const high = Number(selectedCandle.high || 0);
+    const low = Number(selectedCandle.low || 0);
+    const range = high - low;
+    const body = Math.abs(close - open);
+    const upperWick = high - Math.max(open, close);
+    const lowerWick = Math.min(open, close) - low;
+    return { open, close, high, low, range, body, upperWick, lowerWick };
+  }, [selectedCandle]);
 
   return (
     <div className="card">
@@ -77,6 +97,36 @@ export default function CandlestickChart({ defaultPair = 'BTCUSDT', defaultTf = 
         </div>
       )}
       {!isLoading && !noData && <div ref={containerRef} className="w-full h-48 md:h-72 lg:h-96" />}
+      {selectedCandle && candleStats && (
+        <div className="modal-overlay">
+          <div className="modal space-y-3">
+            <h3 className="font-semibold">Candle Details</h3>
+            <p className="text-xs text-[var(--text-muted)]">{pair} · {tf} · {new Date(Number(selectedCandle.timestamp)).toLocaleString()}</p>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="card !p-3"><p className="text-xs text-[var(--text-muted)]">Open</p><p>{candleStats.open.toFixed(4)}</p></div>
+              <div className="card !p-3"><p className="text-xs text-[var(--text-muted)]">Close</p><p>{candleStats.close.toFixed(4)}</p></div>
+              <div className="card !p-3"><p className="text-xs text-[var(--text-muted)]">High</p><p>{candleStats.high.toFixed(4)}</p></div>
+              <div className="card !p-3"><p className="text-xs text-[var(--text-muted)]">Low</p><p>{candleStats.low.toFixed(4)}</p></div>
+              <div className="card !p-3"><p className="text-xs text-[var(--text-muted)]">Range</p><p>{candleStats.range.toFixed(4)}</p></div>
+              <div className="card !p-3"><p className="text-xs text-[var(--text-muted)]">Body</p><p>{candleStats.body.toFixed(4)}</p></div>
+              <div className="card !p-3"><p className="text-xs text-[var(--text-muted)]">Upper Wick</p><p>{candleStats.upperWick.toFixed(4)}</p></div>
+              <div className="card !p-3"><p className="text-xs text-[var(--text-muted)]">Lower Wick</p><p>{candleStats.lowerWick.toFixed(4)}</p></div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  onUseCandle?.({ pair, timeframe: tf, candle: selectedCandle, stats: candleStats });
+                  setSelectedCandle(null);
+                }}
+              >
+                Use In Builder
+              </button>
+              <button className="btn-ghost" onClick={() => setSelectedCandle(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
