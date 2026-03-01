@@ -222,7 +222,7 @@
   }
 
   .modal {
-    @apply card w-full max-w-lg animate-scale-in max-h-[90vh] overflow-y-auto md:rounded-3xl rounded-t-3xl md:my-4 mt-auto;
+    @apply card w-full max-w-lg animate-scale-in max-h-[90vh] overflow-y-auto rounded-3xl;
   }
 
   .grid-section {
@@ -235,12 +235,16 @@
   .card {
     @apply p-4 rounded-2xl;
   }
+  .card:hover {
+    transform: none;
+  }
   .btn {
     @apply px-4;
   }
   .modal {
-    max-height: 94vh;
-    @apply rounded-t-3xl rounded-b-none;
+    max-height: 92vh;
+    width: min(96vw, 640px);
+    @apply rounded-2xl;
   }
   .tab {
     @apply text-xs px-3;
@@ -255,6 +259,9 @@
   select,
   textarea {
     font-size: 16px !important;
+  }
+  table {
+    min-width: 640px;
   }
 }
 

@@ -70,6 +70,12 @@ export default function Predictions() {
     const demo = tradesQ.data?.open_trades?.demo || [];
     return [...live, ...demo];
   }, [tradesQ.data]);
+  const closedTrades = useMemo(() => {
+    const live = tradesQ.data?.closed_trades?.live || [];
+    const demo = tradesQ.data?.closed_trades?.demo || [];
+    return [...live.map((x) => ({ ...x, mode: 'live' })), ...demo.map((x) => ({ ...x, mode: 'demo' }))];
+  }, [tradesQ.data]);
+  const hasLiveFunding = Boolean(walletQ.data?.connected) && Number(walletQ.data?.matic_balance || 0) > 0.001;
 
   return (
     <PageWrapper className="space-y-4">
@@ -86,10 +92,18 @@ export default function Predictions() {
               market={market}
               onBuyYes={(m) => {
                 setActionError('');
+                if (!hasLiveFunding) {
+                  setActionError('Live wallet is not funded. Add MATIC for gas before live trading.');
+                  return;
+                }
                 setConfirm({ market: m, side: 'yes', mode: 'live' });
               }}
               onBuyNo={(m) => {
                 setActionError('');
+                if (!hasLiveFunding) {
+                  setActionError('Live wallet is not funded. Add MATIC for gas before live trading.');
+                  return;
+                }
                 setConfirm({ market: m, side: 'no', mode: 'live' });
               }}
               onDemo={(m) => {
@@ -100,6 +114,7 @@ export default function Predictions() {
           </div>
         ))}
       </div>
+      {actionError && <div className="badge badge-danger">{actionError}</div>}
 
       <div className="card space-y-3">
         <h2 className="font-semibold">Open Trades</h2>
@@ -137,6 +152,39 @@ export default function Predictions() {
       </div>
 
       <div className="card space-y-3">
+        <h2 className="font-semibold">Resolved Trades</h2>
+        {closedTrades.length === 0 && <p className="text-sm text-[var(--text-muted)]">No resolved trades yet.</p>}
+        {closedTrades.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-[var(--text-muted)]">
+                <tr>
+                  <th className="text-left py-2">Mode</th>
+                  <th className="text-left py-2">Market</th>
+                  <th className="text-left py-2">Side</th>
+                  <th className="text-left py-2">P/L</th>
+                  <th className="text-left py-2">Closed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {closedTrades.map((row, idx) => (
+                  <tr key={`${row.mode}-${row.id || idx}`} className="border-t border-[var(--line)]">
+                    <td className="py-2">{row.mode}</td>
+                    <td className="py-2 max-w-[380px] truncate">{row.question || row.market_id}</td>
+                    <td className="py-2 uppercase">{row.position || row.side}</td>
+                    <td className={`py-2 ${Number(row.resolution_pnl || row.pnl_usd || row.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {Number(row.resolution_pnl || row.pnl_usd || row.pnl || 0).toFixed(2)}
+                    </td>
+                    <td className="py-2">{row.closed_at ? new Date(row.closed_at).toLocaleString() : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card space-y-3">
         <h2 className="font-semibold">Demo Wallet</h2>
         <p className="text-sm text-[var(--text-muted)]">Balance: {demoQ.data?.balance ?? 0}</p>
         <div className="flex gap-2">
@@ -163,6 +211,10 @@ export default function Predictions() {
                     const marketId = confirm.market.id || confirm.market.condition_id;
                     const entry = confirm.side === 'yes' ? Number(confirm.market.yes_price || 0) : Number(confirm.market.no_price || 0);
                     if (confirm.mode === 'live') {
+                      if (!hasLiveFunding) {
+                        setActionError('Live wallet is not funded. Add MATIC and retry.');
+                        return;
+                      }
                       await buyM.mutateAsync({ m: marketId, s: size, side: confirm.side, entry, q: confirm.market.question });
                     } else {
                       await demoM.mutateAsync({ m: marketId, s: size, side: confirm.side, entry, q: confirm.market.question });

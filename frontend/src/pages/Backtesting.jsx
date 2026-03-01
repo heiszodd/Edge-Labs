@@ -62,6 +62,7 @@ export default function Backtesting() {
   const [runId, setRunId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [runError, setRunError] = useState('');
   const [sortBy, setSortBy] = useState('entry_time');
   const [formErrors, setFormErrors] = useState({});
 
@@ -98,6 +99,7 @@ export default function Backtesting() {
     if (Object.keys(errors).length) return;
     setLoading(true);
     setResult(null);
+    setRunError('');
     try {
       const payload = {
         ...form,
@@ -109,8 +111,18 @@ export default function Backtesting() {
       const run = await runBacktestApi(payload);
       const nextRunId = run?.run_id;
       setRunId(nextRunId);
-      const poll = await getBacktestRun(nextRunId);
-      setResult(poll || null);
+      if (run?.status === 'failed') {
+        setRunError(run?.error || 'Backtest failed');
+      }
+      if (nextRunId) {
+        const poll = await getBacktestRun(nextRunId);
+        if (poll?.status === 'failed') {
+          setRunError(poll?.error || 'Backtest failed');
+        }
+        setResult(poll || null);
+      }
+    } catch (err) {
+      setRunError(err?.response?.data?.detail || 'Backtest request failed');
     } finally {
       setLoading(false);
     }
@@ -235,6 +247,7 @@ export default function Backtesting() {
           <div className="xl:col-span-2 card space-y-4">
             <h2 className="font-semibold">Backtest Results</h2>
             {loading && <div className="text-amber-300">⏳ Running... <span className="animate-pulse">●●●</span></div>}
+            {!loading && runError && <div className="badge badge-danger">{runError}</div>}
             {!loading && !result && <div className="text-zinc-400">Run a backtest to view results.</div>}
             {!!result && (
               <>

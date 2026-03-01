@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from backend import db
 from backend.bot.alert_sender import send_alert, send_signal_alert
-from engine.ohlcv_cache import fetch_candles, get_htf
+from engine.ohlcv_cache import fetch_candles, fetch_candles_detailed, get_htf
 from engine.rules import RULE_REGISTRY, evaluate_rule
 
 log = logging.getLogger(__name__)
@@ -189,9 +189,19 @@ async def evaluate_model(model: dict, candles: list, user_id: str) -> dict:
 async def run_model(model, user_id, context) -> dict:
     pair = _normalize_pair(str(model.get("pair", "BTCUSDT")))
     timeframe = str(model.get("timeframe", "1h"))
-    candles = await fetch_candles(pair, timeframe, limit=120)
+    detail = await fetch_candles_detailed(pair, timeframe, limit=120)
+    candles = detail.get("candles", [])
     if not candles:
-        return {"passed": False, "phase_reached": 0, "error": "no_candles", "pair": pair, "timeframe": timeframe}
+        return {
+            "passed": False,
+            "phase_reached": 0,
+            "error": "no_candles",
+            "pair": pair,
+            "timeframe": timeframe,
+            "ohlcv_provider": detail.get("provider"),
+            "ohlcv_status_code": detail.get("status_code"),
+            "ohlcv_detail": detail.get("error"),
+        }
     return await evaluate_model(model=model, candles=candles, user_id=user_id)
 
 

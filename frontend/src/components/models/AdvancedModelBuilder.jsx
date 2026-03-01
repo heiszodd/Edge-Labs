@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const RULE_LIBRARY = {
   phase1: [
@@ -176,7 +176,7 @@ function PhaseZone({ phaseKey, title, instances, onChange }) {
   );
 }
 
-export default function AdvancedModelBuilder({ onSave, onCancel }) {
+export default function AdvancedModelBuilder({ onSave, onCancel, initialConfig }) {
   const [name, setName] = useState('');
   const [pair, setPair] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('1h');
@@ -193,6 +193,26 @@ export default function AdvancedModelBuilder({ onSave, onCancel }) {
   const [search, setSearch] = useState('');
   const [cat, setCat] = useState('phase1');
   const [phases, setPhases] = useState({ phase1: [], phase2: [], phase3: [], phase4: [] });
+  const [seedContext, setSeedContext] = useState(null);
+
+  useEffect(() => {
+    if (!initialConfig) return;
+    if (initialConfig.pair) setPair(initialConfig.pair);
+    if (initialConfig.timeframe) setTimeframe(initialConfig.timeframe);
+    if (typeof initialConfig.autoThreshold === 'number') setAutoThreshold(initialConfig.autoThreshold);
+    if (typeof initialConfig.minQualityScore === 'number') setMinQualityScore(initialConfig.minQualityScore);
+    if (initialConfig.seedRuleId) {
+      setPhases((prev) => {
+        if (prev.phase4.some((r) => r.ruleId === initialConfig.seedRuleId)) return prev;
+        const inst = makeInstance(initialConfig.seedRuleId);
+        if (!inst) return prev;
+        return { ...prev, phase4: [...prev.phase4, inst] };
+      });
+    }
+    if (initialConfig.seedContext) {
+      setSeedContext(initialConfig.seedContext);
+    }
+  }, [initialConfig]);
 
   const used = useMemo(() => new Set(Object.values(phases).flat().map((x) => x.ruleId)), [phases]);
   const filteredRules = (RULE_LIBRARY[cat] || []).filter(
@@ -301,6 +321,11 @@ export default function AdvancedModelBuilder({ onSave, onCancel }) {
             <input className="input" type="number" value={leverage} onChange={(e) => setLeverage(Number(e.target.value || 0))} placeholder="Leverage" />
             <input className="input" type="number" value={autoThreshold} onChange={(e) => setAutoThreshold(Number(e.target.value || 0))} placeholder="Auto threshold" />
           </div>
+          {seedContext && (
+            <div className="card !p-3 text-xs text-[var(--text-muted)]">
+              Seeded from candle: {seedContext.pair} {seedContext.timeframe} · {seedContext.timestamp}
+            </div>
+          )}
         </div>
       </div>
     </div>

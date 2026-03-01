@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from fastapi import APIRouter, Depends
 
 from backend import db
 from backend.dependencies import get_current_user
+from backend.services.external_api import request_json
+from engine.hyperliquid.account_reader import fetch_account_summary
+from engine.solana.wallet_reader import get_sol_price_usd, get_wallet_summary
 
 router = APIRouter(prefix="/api", tags=["overview"])
 
@@ -48,9 +52,57 @@ def _invested_degen(trades: list[dict]) -> float:
     return total
 
 
+async def _perps_live_balance(user_id: str) -> tuple[float, bool]:
+    try:
+        summary = await fetch_account_summary(user_id)
+        if summary.get("error"):
+            return 0.0, False
+        return _to_float(summary.get("accountValue"), 0.0), True
+    except Exception:
+        return 0.0, False
+
+
+async def _predictions_live_balance(user_id: str) -> tuple[float, bool]:
+    address = db.get_poly_address(user_id)
+    if not address:
+        return 0.0, False
+    data, failure = await request_json(
+        "POST",
+        "https://polygon-rpc.com",
+        json={"jsonrpc": "2.0", "id": 1, "method": "eth_getBalance", "params": [address, "latest"]},
+    )
+    if failure:
+        return 0.0, False
+    wei_hex = ((data or {}).get("result") or "0x0")
+    try:
+        matic = int(str(wei_hex), 16) / 10**18
+    except Exception:
+        matic = 0.0
+    return matic, True
+
+
+async def _degen_live_balance(user_id: str) -> tuple[float | None, bool]:
+    address = db.get_sol_address(user_id)
+    if not address:
+        return None, False
+    try:
+        summary, sol_price = await asyncio.gather(get_wallet_summary(address), get_sol_price_usd())
+        sol_balance = _to_float((summary or {}).get("sol_balance"), 0.0)
+        usdc_balance = _to_float((summary or {}).get("usdc_balance"), 0.0)
+        usd_value = (sol_balance * max(sol_price, 0.0)) + usdc_balance
+        return round(usd_value, 2), True
+    except Exception:
+        return None, False
+
+
 @router.get("/overview")
 async def get_overview(user=Depends(get_current_user)):
     user_id = user["id"]
+
+    perps_live_task = _perps_live_balance(user_id)
+    degen_live_task = _degen_live_balance(user_id)
+    predictions_live_task = _predictions_live_balance(user_id)
+    perps_live, degen_live, predictions_live = await asyncio.gather(perps_live_task, degen_live_task, predictions_live_task)
 
     perps_demo = _to_float(db.get_demo_balance(user_id, "perps"), 10000.0)
     perps_trades = db.get_trade_history(user_id, "perps", limit=200)
@@ -87,6 +139,8 @@ async def get_overview(user=Depends(get_current_user)):
     return {
         "perps": {
             "demo_balance": round(perps_demo, 2),
+            "live_balance": round(perps_live[0], 2),
+            "live_balance_available": bool(perps_live[1]),
             "total_pnl": round(perps_pnl, 2),
             "roi_pct": round(perps_roi, 2),
             "open_positions": len(hl_positions or []),
@@ -95,6 +149,9 @@ async def get_overview(user=Depends(get_current_user)):
         },
         "degen": {
             "demo_balance": round(degen_demo, 2),
+            "live_balance": None if degen_live[0] is None else round(_to_float(degen_live[0], 0.0), 2),
+            "live_balance_available": bool(degen_live[1]),
+            "live_balance_unavailable_reason": None if degen_live[1] else "live_unavailable",
             "total_pnl": round(degen_pnl, 2),
             "roi_pct": round(degen_roi, 2),
             "open_positions": len(sol_positions or []),
@@ -107,6 +164,8 @@ async def get_overview(user=Depends(get_current_user)):
             "win_rate": _win_rate(poly_trades or []),
             "open_positions": len(db.get_open_poly_trades(user_id) or []),
             "demo_balance": round(_to_float(db.get_demo_balance(user_id, "poly"), 10000.0), 2),
+            "live_balance": round(predictions_live[0], 6),
+            "live_balance_available": bool(predictions_live[1]),
             "roi_pct": 0.0,
         },
         "signals": {
@@ -115,4 +174,6 @@ async def get_overview(user=Depends(get_current_user)):
             "recent": recent_signals,
         },
         "total_pnl": round(perps_pnl + degen_pnl + poly_pnl, 2),
+        "total_balance": round(_to_float(perps_live[0], 0.0) + _to_float(predictions_live[0], 0.0) + _to_float(degen_live[0], 0.0), 2),
+        "total_balance_available_count": int(bool(perps_live[1])) + int(bool(predictions_live[1])) + int(bool(degen_live[1])),
     }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,6 +14,7 @@ from backend.services.external_api import request_json
 from engine.polymarket.scanner import fetch_polymarket_crypto_markets
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
+GAMMA_API = "https://gamma-api.polymarket.com/markets"
 
 
 class ToggleBody(BaseModel):
@@ -56,6 +58,88 @@ def _build_market_map(markets: list[dict]) -> dict[str, dict]:
         if key:
             out[key] = market
     return out
+
+
+async def _fetch_gamma_markets(*, active: bool, closed: bool, limit: int = 500) -> list[dict]:
+    data, failure = await request_json(
+        "GET",
+        GAMMA_API,
+        params={
+            "active": "true" if active else "false",
+            "closed": "true" if closed else "false",
+            "limit": str(limit),
+            "order": "endDate",
+            "ascending": "false",
+        },
+    )
+    if failure or not isinstance(data, list):
+        return []
+    return data
+
+
+def _market_is_closed(market: dict[str, Any]) -> bool:
+    if bool(market.get("closed")):
+        return True
+    end_raw = market.get("endDate") or market.get("end_date_iso")
+    if not end_raw:
+        return False
+    try:
+        end_dt = datetime.fromisoformat(str(end_raw).replace("Z", "+00:00"))
+        return end_dt <= datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
+def _resolution_price_for_side(market: dict[str, Any], side: str) -> float | None:
+    raw_outcome = str(market.get("outcome") or market.get("winner") or "").lower()
+    if raw_outcome in {"yes", "true", "1"}:
+        return 1.0 if side == "yes" else 0.0
+    if raw_outcome in {"no", "false", "0"}:
+        return 0.0 if side == "yes" else 1.0
+    yes_price, no_price = _parse_prices(market.get("outcomePrices", market.get("outcome_prices", [])))
+    if yes_price in {0.0, 1.0}:
+        return yes_price if side == "yes" else 1 - yes_price
+    if no_price in {0.0, 1.0}:
+        return no_price if side == "no" else 1 - no_price
+    return None
+
+
+async def _sync_live_trade_resolutions(uid: str, open_rows: list[dict]) -> None:
+    if not open_rows:
+        return
+    active_markets, closed_markets = await asyncio.gather(
+        _fetch_gamma_markets(active=True, closed=False, limit=500),
+        _fetch_gamma_markets(active=False, closed=True, limit=500),
+    )
+    market_map = _build_market_map((active_markets or []) + (closed_markets or []))
+    for row in open_rows:
+        market_id = str(row.get("market_id") or "")
+        if not market_id:
+            continue
+        market = market_map.get(market_id) or {}
+        if not market or not _market_is_closed(market):
+            continue
+        side = str(row.get("position") or "yes").lower()
+        resolution_price = _resolution_price_for_side(market, side)
+        if resolution_price is None:
+            continue
+        size_usd = _to_float(row.get("size_usd"), 0.0)
+        shares = _to_float(row.get("shares"), 0.0) or (size_usd / max(_to_float(row.get("entry_price"), 0.5), 1e-9))
+        resolved_value = shares * resolution_price
+        pnl = resolved_value - size_usd
+        db._update(
+            "poly_live_trades",
+            {
+                "status": "closed",
+                "current_price": resolution_price,
+                "resolution_pnl": round(pnl, 6),
+                "pnl_usd": round(pnl, 6),
+                "closed_at": datetime.now(timezone.utc).isoformat(),
+                "outcome": "resolved",
+            },
+            id=row.get("id"),
+            user_id=uid,
+        )
 
 
 def _trade_with_pnl(trade: dict, market_map: dict[str, dict], *, live: bool) -> dict:
@@ -153,6 +237,8 @@ async def trades(user: dict = Depends(get_current_user)):
     markets = await fetch_polymarket_crypto_markets(limit=200)
     market_map = _build_market_map(markets)
     live_open = db.get_open_poly_trades(uid)
+    await _sync_live_trade_resolutions(uid, live_open)
+    live_open = db.get_open_poly_trades(uid)
     demo_open = db.get_open_demo_trades(uid, "poly")
     live_open_enriched = [_trade_with_pnl(row, market_map, live=True) for row in live_open]
     demo_open_enriched = [_trade_with_pnl(row, market_map, live=False) for row in demo_open]
@@ -180,6 +266,23 @@ async def trade(body: TradeBody, user: dict = Depends(require_tier("pro"))):
         return demo_trade(body, user)  # type: ignore[arg-type]
     if not body.market_id:
         raise HTTPException(status_code=400, detail="market_id_required")
+    address = db.get_poly_address(user["id"])
+    if not address:
+        raise HTTPException(status_code=400, detail="wallet_not_connected")
+    bal_data, failure = await request_json(
+        "POST",
+        "https://polygon-rpc.com",
+        json={"jsonrpc": "2.0", "id": 1, "method": "eth_getBalance", "params": [address, "latest"]},
+    )
+    if failure:
+        raise HTTPException(status_code=502, detail=f"wallet_balance_check_failed:{failure.reason}")
+    wei_hex = ((bal_data or {}).get("result") or "0x0")
+    try:
+        matic = int(str(wei_hex), 16) / 10**18
+    except Exception:
+        matic = 0.0
+    if matic <= 0.001:
+        raise HTTPException(status_code=400, detail="insufficient_live_funds")
 
     side = str(body.side or "yes").lower()
     if side not in {"yes", "no"}:

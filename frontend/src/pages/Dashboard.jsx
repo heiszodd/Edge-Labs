@@ -40,6 +40,8 @@ function ROIPill({ value = 0 }) {
 
 function SectionCard({ title, href, data = {}, icon, delay = 0 }) {
   const isPositive = Number(data.total_pnl || 0) >= 0;
+  const hasLive = Boolean(data.live_balance_available);
+  const balanceValue = hasLive ? Number(data.live_balance || 0) : Number(data.demo_balance || 0);
   return (
     <Link to={href} style={{ animation: 'slideUp 0.45s ease both', animationDelay: `${delay}ms` }} className="card">
       <div className="flex items-center justify-between mb-4">
@@ -49,8 +51,9 @@ function SectionCard({ title, href, data = {}, icon, delay = 0 }) {
         </div>
         <ROIPill value={data.roi_pct || 0} />
       </div>
-      <p className="text-xs text-[var(--text-muted)] mb-1">Balance</p>
-      <CountUp end={Number(data.demo_balance || 0)} prefix="$" className="text-2xl font-semibold" />
+      <p className="text-xs text-[var(--text-muted)] mb-1">{hasLive ? 'Live Balance' : 'Balance (demo fallback)'}</p>
+      <CountUp end={balanceValue} prefix="$" className="text-2xl font-semibold" />
+      {!hasLive && <p className="text-[11px] text-amber-500 mt-1">Live balance unavailable</p>}
       <div className="mt-4 flex items-end justify-between">
         <div>
           <p className="text-xs text-[var(--text-muted)]">Total PnL</p>
@@ -83,12 +86,16 @@ export default function Dashboard() {
 
   const data = overviewQ.data || {};
   const totalPnl = Number(data.total_pnl || 0);
+  const totalBalance = Number(data.total_balance || 0);
   const positive = totalPnl >= 0;
 
   return (
     <PageWrapper className="space-y-5">
       <section className={`card ${positive ? 'shadow-[0_0_24px_rgba(16,185,129,0.2)]' : 'shadow-[0_0_24px_rgba(244,63,94,0.2)]'}`}>
-        <p className="text-sm text-[var(--text-muted)]">Total Portfolio PnL</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-[var(--text-muted)]">Total Portfolio PnL</p>
+          <p className="text-sm text-[var(--text-muted)]">Balance: <span className="font-semibold text-[var(--text-primary)]">${totalBalance.toFixed(2)}</span></p>
+        </div>
         <CountUp end={totalPnl} prefix={positive ? '+$' : '-$'} decimals={2} className={`text-4xl font-bold ${positive ? 'text-emerald-400' : 'text-rose-400'}`} />
       </section>
 
