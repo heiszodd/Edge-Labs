@@ -15,7 +15,8 @@ export default function Login() {
       await login(email, password);
       navigate('/');
     } catch (err) {
-      setError(err?.response?.data?.detail || err?.message || 'Invalid credentials');
+      const message = err?.response?.data?.detail || err?.message || 'Invalid credentials';
+      setError(/timeout/i.test(String(message)) ? 'Sign-in timed out. Please try again in a moment.' : message);
     }
   };
 

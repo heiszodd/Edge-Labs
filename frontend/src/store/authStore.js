@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import apiClient from '../api/client';
 
+const AUTH_TIMEOUT_MS = 45000;
+
 const subscriptionTiers = {
   free: [],
   pro: ['scanner', 'backtesting', 'liveTrading'],
@@ -22,6 +24,22 @@ const clearPersistedAuth = () => {
   localStorage.removeItem('edge-auth');
 };
 
+const isTimeoutError = (error) =>
+  error?.code === 'ECONNABORTED' || /timeout/i.test(String(error?.message || ''));
+
+const requestAuth = async (path, payload) => {
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await apiClient.post(path, payload, { timeout: AUTH_TIMEOUT_MS });
+    } catch (error) {
+      lastError = error;
+      if (!isTimeoutError(error) || attempt > 0) break;
+    }
+  }
+  throw lastError;
+};
+
 export const useAuthStore = create((set, get) => ({
   user: initialUser,
   token: persistedToken,
@@ -31,7 +49,7 @@ export const useAuthStore = create((set, get) => ({
     const token = localStorage.getItem('auth_token') || get().token;
     if (!token) return;
     try {
-      const { data } = await apiClient.get('/api/auth/me');
+      const { data } = await apiClient.get('/api/auth/me', { timeout: AUTH_TIMEOUT_MS });
       const user = data || {};
       const tier = (user.tier || user.subscription_tier || 'free').toLowerCase();
       const payload = { user, token, tier };
@@ -43,7 +61,7 @@ export const useAuthStore = create((set, get) => ({
     }
   },
   login: async (email, password) => {
-    const { data } = await apiClient.post('/api/auth/login', { email, password });
+    const { data } = await requestAuth('/api/auth/login', { email, password });
     const user = data.user || { email };
     const token = data.access_token || data.token;
     const tier = (data.tier || user.tier || user.subscription_tier || 'free').toLowerCase();
@@ -53,7 +71,7 @@ export const useAuthStore = create((set, get) => ({
     return data;
   },
   register: async (email, username, password) => {
-    const { data } = await apiClient.post('/api/auth/register', { email, username, password });
+    const { data } = await requestAuth('/api/auth/register', { email, username, password });
     if (data?.requires_email_verification) {
       return data;
     }
@@ -74,7 +92,7 @@ export const useAuthStore = create((set, get) => ({
   },
   refresh: async () => {
     if (!get().token) return;
-    const { data } = await apiClient.get('/api/auth/me');
+    const { data } = await apiClient.get('/api/auth/me', { timeout: AUTH_TIMEOUT_MS });
     const tier = (data.tier || data.subscription_tier || 'free').toLowerCase();
     const payload = { user: data, token: get().token, tier };
     persist(payload);
