@@ -59,12 +59,34 @@ apiClient.interceptors.request.use((config) => {
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error?.response?.status;
     const method = (error?.config?.method || 'get').toUpperCase();
     const path = error?.config?.url || '';
     const targetBase = error?.config?.baseURL || API || (typeof window !== 'undefined' ? window.location.origin : '');
     console.error(`[API ERROR] ${method} ${targetBase}${path} -> ${status || 'NETWORK_ERROR'}`, error?.response?.data || error?.message);
+
+    const originalConfig = error?.config || {};
+    const isNetworkError = !error?.response;
+    const isApiPath = typeof originalConfig.url === 'string' && originalConfig.url.startsWith('/api/');
+    const canRetrySameOrigin =
+      isNetworkError &&
+      !originalConfig.__sameOriginRetry &&
+      typeof originalConfig.baseURL === 'string' &&
+      /^https?:\/\//i.test(originalConfig.baseURL) &&
+      typeof window !== 'undefined';
+
+    // If direct backend call fails at browser network layer (CORS/TLS/etc),
+    // retry once through same-origin /api (for hosting-platform rewrites/proxies).
+    if (canRetrySameOrigin && isApiPath) {
+      const retryConfig = {
+        ...originalConfig,
+        baseURL: undefined,
+        __sameOriginRetry: true,
+      };
+      return apiClient.request(retryConfig);
+    }
+
     if (error?.response?.status === 401) {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('edge-auth');

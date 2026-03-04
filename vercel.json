@@ -2,5 +2,15 @@
   "framework": "vite",
   "installCommand": "cd frontend && npm install",
   "buildCommand": "cd frontend && npm run build",
-  "outputDirectory": "frontend/dist"
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://edge-labs-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://edge-labs-production.up.railway.app/health"
+    }
+  ]
 }
