@@ -16,6 +16,11 @@ export default function Login() {
       navigate('/');
     } catch (err) {
       const message = err?.response?.data?.detail || err?.message || 'Invalid credentials';
+      if (/network error/i.test(String(message))) {
+        const apiBase = err?.config?.baseURL || window.location.origin;
+        setError(`Cannot reach auth API (${apiBase}). Check frontend API URL and backend CORS/deployment.`);
+        return;
+      }
       setError(/timeout/i.test(String(message)) ? 'Sign-in timed out. Please try again in a moment.' : message);
     }
   };

@@ -1,19 +1,43 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
+const isLocalHost = (host) =>
+  /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0)(:\d+)?$/i.test(String(host || '').trim());
+
 const normalizeBaseUrl = (value) => {
   const raw = (value || '').trim();
-  if (!raw) return 'http://localhost:8000';
+  if (!raw) return '';
   if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, '');
   const host = raw.replace(/\/+$/, '');
-  const isLocalHost = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0)(:\d+)?$/i.test(host);
-  return `${isLocalHost ? 'http' : 'https'}://${host}`;
+  return `${isLocalHost(host) ? 'http' : 'https'}://${host}`;
 };
 
-const API = normalizeBaseUrl(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL);
+const resolveApiBase = () => {
+  const envValue = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '';
+  const normalized = normalizeBaseUrl(envValue);
+  if (!normalized) return '';
+  if (typeof window === 'undefined') return normalized;
+
+  const appHost = window.location.host || '';
+  let apiHost = '';
+  try {
+    apiHost = new URL(normalized).host;
+  } catch {
+    return '';
+  }
+
+  // Avoid hard-failing deployed apps when envs still point to localhost.
+  if (!isLocalHost(appHost) && isLocalHost(apiHost)) {
+    console.warn(`[API] Ignoring local API URL (${normalized}) on non-local app host (${appHost}); using same-origin /api.`);
+    return '';
+  }
+  return normalized;
+};
+
+const API = resolveApiBase();
 
 const apiClient = axios.create({
-  baseURL: API,
+  baseURL: API || undefined,
   timeout: 15000,
 });
 
@@ -27,7 +51,8 @@ apiClient.interceptors.request.use((config) => {
   if (import.meta.env.DEV) {
     const method = (config.method || 'get').toUpperCase();
     const path = config.url || '';
-    console.debug(`[API] ${method} ${API}${path}`);
+    const targetBase = config.baseURL || (typeof window !== 'undefined' ? window.location.origin : '');
+    console.debug(`[API] ${method} ${targetBase}${path}`);
   }
   return config;
 });
@@ -38,7 +63,8 @@ apiClient.interceptors.response.use(
     const status = error?.response?.status;
     const method = (error?.config?.method || 'get').toUpperCase();
     const path = error?.config?.url || '';
-    console.error(`[API ERROR] ${method} ${API}${path} -> ${status || 'NETWORK_ERROR'}`, error?.response?.data || error?.message);
+    const targetBase = error?.config?.baseURL || API || (typeof window !== 'undefined' ? window.location.origin : '');
+    console.error(`[API ERROR] ${method} ${targetBase}${path} -> ${status || 'NETWORK_ERROR'}`, error?.response?.data || error?.message);
     if (error?.response?.status === 401) {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('edge-auth');
