@@ -32,13 +32,15 @@ DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
 ]
+DEFAULT_ALLOWED_ORIGIN_REGEX = r"^https://[a-zA-Z0-9-]+\.vercel\.app$"
 
 allowed_origins = list(dict.fromkeys((FRONTEND_URLS or []) + DEFAULT_ALLOWED_ORIGINS))
+allowed_origin_regex = None if ALLOW_ALL_CORS else (CORS_ORIGIN_REGEX or DEFAULT_ALLOWED_ORIGIN_REGEX)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=CORS_ORIGIN_REGEX if not ALLOW_ALL_CORS else None,
+    allow_origin_regex=allowed_origin_regex,
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
