@@ -9,7 +9,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr
 
 from backend import config, db
@@ -121,8 +121,29 @@ def _auth_payload_for_user(user: dict, token: str) -> dict:
     }
 
 
+def _set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=config.AUTH_COOKIE_NAME,
+        value=token,
+        max_age=config.AUTH_COOKIE_MAX_AGE_SECONDS,
+        httponly=True,
+        secure=config.AUTH_COOKIE_SECURE,
+        samesite=config.AUTH_COOKIE_SAMESITE,
+        path="/",
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=config.AUTH_COOKIE_NAME,
+        path="/",
+        secure=config.AUTH_COOKIE_SECURE,
+        samesite=config.AUTH_COOKIE_SAMESITE,
+    )
+
+
 @router.post("/register")
-def register(body: RegisterBody) -> dict:
+def register(body: RegisterBody, response: Response) -> dict:
     if not db._client:
         raise HTTPException(status_code=500, detail="Auth unavailable")
     try:
@@ -142,6 +163,7 @@ def register(body: RegisterBody) -> dict:
                 "requires_email_verification": True,
                 "message": "Account created. Verify your email, then sign in.",
             }
+        _set_auth_cookie(response, token)
         return _auth_payload_for_user(user, token)
     except HTTPException:
         raise
@@ -157,6 +179,7 @@ def register(body: RegisterBody) -> dict:
                 if user_id and token:
                     user = _ensure_user_row(user_id, str(body.email), body.username)
                     if user:
+                        _set_auth_cookie(response, token)
                         return _auth_payload_for_user(user, token)
             except Exception:
                 pass
@@ -165,7 +188,7 @@ def register(body: RegisterBody) -> dict:
 
 
 @router.post("/login")
-def login(body: LoginBody) -> dict:
+def login(body: LoginBody, response: Response) -> dict:
     if not db._client:
         raise HTTPException(status_code=500, detail="Auth unavailable")
     try:
@@ -180,6 +203,7 @@ def login(body: LoginBody) -> dict:
         user = _ensure_user_row(user_id, str(email))
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        _set_auth_cookie(response, token)
         return _auth_payload_for_user(user, token)
     except HTTPException:
         raise
@@ -203,6 +227,12 @@ def me(user: dict = Depends(get_current_user)) -> dict:
         "telegram_username": user.get("telegram_username"),
         "telegram_link_expires": user.get("telegram_link_expires"),
     }
+
+
+@router.post("/logout")
+def logout(response: Response) -> dict:
+    _clear_auth_cookie(response)
+    return {"success": True}
 
 
 @router.post("/telegram-link")

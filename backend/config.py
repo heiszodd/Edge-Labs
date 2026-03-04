@@ -36,6 +36,12 @@ HELIUS_RPC_URL = os.getenv("HELIUS_RPC_URL", "https://api.mainnet-beta.solana.co
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 BACKEND_URL = _normalize_url(os.getenv("BACKEND_URL", "http://localhost:8000"), default_scheme="https")
 SERVICE_SECRET = os.getenv("SERVICE_SECRET", "")
+AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "edge_auth")
+_default_cookie_secure = "false" if FRONTEND_URL.startswith("http://localhost") else "true"
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", _default_cookie_secure).strip().lower() in {"1", "true", "yes", "on"}
+_cookie_samesite = os.getenv("AUTH_COOKIE_SAMESITE", "lax").strip().lower()
+AUTH_COOKIE_SAMESITE = _cookie_samesite if _cookie_samesite in {"lax", "strict", "none"} else "lax"
+AUTH_COOKIE_MAX_AGE_SECONDS = int(os.getenv("AUTH_COOKIE_MAX_AGE_SECONDS", "604800") or "604800")
 ADMIN_BOOTSTRAP_EMAIL = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
 ADMIN_BOOTSTRAP_PASSWORD = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
 ADMIN_BOOTSTRAP_USERNAME = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "admin")

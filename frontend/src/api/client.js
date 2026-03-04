@@ -39,13 +39,15 @@ const API = resolveApiBase();
 const apiClient = axios.create({
   baseURL: API || undefined,
   timeout: 15000,
+  withCredentials: true,
 });
 
 export const unwrap = (response) => response?.data?.data ?? response?.data;
 
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('auth_token') || useAuthStore.getState().token;
-  if (token) {
+  // Legacy compatibility for older clients still persisting bearer tokens.
+  if (token && !config.headers?.Authorization) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   if (import.meta.env.DEV) {
@@ -82,6 +84,7 @@ apiClient.interceptors.response.use(
       const retryConfig = {
         ...originalConfig,
         baseURL: undefined,
+        withCredentials: true,
         __sameOriginRetry: true,
       };
       return apiClient.request(retryConfig);

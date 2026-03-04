@@ -10,11 +10,12 @@ const subscriptionTiers = {
 };
 
 const saved = JSON.parse(localStorage.getItem('edge-auth') || '{}');
-const persistedToken = localStorage.getItem('auth_token') || saved.token || null;
 const initialUser = saved.user || null;
 const initialTier = (saved.tier || saved.user?.subscription_tier || 'free').toLowerCase();
+const legacyToken = localStorage.getItem('auth_token') || saved.token || null;
 
 const persist = (payload) => {
+  // Cookie session is the primary auth transport; token is kept only for legacy fallback.
   if (payload?.token) localStorage.setItem('auth_token', payload.token);
   localStorage.setItem('edge-auth', JSON.stringify(payload));
 };
@@ -42,16 +43,15 @@ const requestAuth = async (path, payload) => {
 
 export const useAuthStore = create((set, get) => ({
   user: initialUser,
-  token: persistedToken,
+  token: legacyToken,
   tier: initialTier,
-  isAuthenticated: Boolean(persistedToken),
+  isAuthenticated: Boolean(initialUser),
   initializeAuth: async () => {
-    const token = localStorage.getItem('auth_token') || get().token;
-    if (!token) return;
     try {
       const { data } = await apiClient.get('/api/auth/me', { timeout: AUTH_TIMEOUT_MS });
       const user = data || {};
       const tier = (user.tier || user.subscription_tier || 'free').toLowerCase();
+      const token = localStorage.getItem('auth_token') || get().token || null;
       const payload = { user, token, tier };
       persist(payload);
       set({ ...payload, isAuthenticated: true });
@@ -63,11 +63,11 @@ export const useAuthStore = create((set, get) => ({
   login: async (email, password) => {
     const { data } = await requestAuth('/api/auth/login', { email, password });
     const user = data.user || { email };
-    const token = data.access_token || data.token;
+    const token = data.access_token || data.token || null;
     const tier = (data.tier || user.tier || user.subscription_tier || 'free').toLowerCase();
     const payload = { user, token, tier };
     persist(payload);
-    set({ ...payload, isAuthenticated: Boolean(token) });
+    set({ ...payload, isAuthenticated: true });
     return data;
   },
   register: async (email, username, password) => {
@@ -77,7 +77,7 @@ export const useAuthStore = create((set, get) => ({
     }
     if (data?.token || data?.access_token) {
       const user = data.user || { email };
-      const token = data.access_token || data.token;
+      const token = data.access_token || data.token || null;
       const tier = (data.tier || user.tier || user.subscription_tier || 'free').toLowerCase();
       const payload = { user, token, tier };
       persist(payload);
@@ -86,15 +86,19 @@ export const useAuthStore = create((set, get) => ({
     }
     return get().login(email, password);
   },
-  logout: () => {
+  logout: async () => {
+    try {
+      await apiClient.post('/api/auth/logout', {}, { timeout: AUTH_TIMEOUT_MS });
+    } catch {
+      // Clearing local state remains the source of truth on client logout.
+    }
     clearPersistedAuth();
     set({ user: null, token: null, tier: 'free', isAuthenticated: false });
   },
   refresh: async () => {
-    if (!get().token) return;
     const { data } = await apiClient.get('/api/auth/me', { timeout: AUTH_TIMEOUT_MS });
     const tier = (data.tier || data.subscription_tier || 'free').toLowerCase();
-    const payload = { user: data, token: get().token, tier };
+    const payload = { user: data, token: localStorage.getItem('auth_token') || get().token || null, tier };
     persist(payload);
     set({ ...payload, isAuthenticated: true });
   },

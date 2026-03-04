@@ -1,17 +1,41 @@
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from backend import db
+from backend import config, db
 
 bearer = HTTPBearer(auto_error=False)
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
-    if not credentials:
+def _resolve_auth_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+    cookie_token: str | None,
+) -> str:
+    if credentials and credentials.credentials:
+        return credentials.credentials
+    if cookie_token:
+        return cookie_token
+    # Fallback for non-browser clients that may send a raw cookie header.
+    header_cookie = request.headers.get("cookie", "")
+    if header_cookie:
+        marker = f"{config.AUTH_COOKIE_NAME}="
+        for part in header_cookie.split(";"):
+            item = part.strip()
+            if item.startswith(marker):
+                return item[len(marker):]
+    return ""
+
+
+def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    cookie_token: str | None = Cookie(default=None, alias=config.AUTH_COOKIE_NAME),
+) -> dict:
+    token = _resolve_auth_token(request, credentials, cookie_token)
+    if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
-    token = credentials.credentials
     user = {}
     try:
         user = db._client.auth.get_user(token).user if db._client else {}  # type: ignore[attr-defined]
