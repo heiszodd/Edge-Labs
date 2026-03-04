@@ -1,28 +1,39 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import useAuth from '../hooks/useAuth';
+import { registerUser } from '../api/auth';
+import { useAuthStore } from '../store/authStore';
 
 export default function Register() {
   const [form, setForm] = useState({ email: '', username: '', password: '' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const { register } = useAuth();
   const navigate = useNavigate();
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setNotice('');
-    try {
-      const result = await register(form.email, form.username, form.password);
-      if (result?.requires_email_verification) {
-        setNotice(result.message || 'Check your email and verify your account, then sign in.');
-        return;
-      }
-      navigate('/');
-    } catch (err) {
-      setError(err?.response?.data?.detail || err?.message || 'Could not create account');
+    const result = await registerUser(form.email, form.password, form.username);
+    if (!result.success) {
+      setError(result.error);
+      return;
     }
+
+    const data = result.data || {};
+    if (data.requires_email_verification) {
+      setNotice(data.message || 'Check your email and verify your account, then sign in.');
+      return;
+    }
+    const token = data.token || data.access_token;
+    const user = data.user;
+    if (token && user) {
+      localStorage.setItem('auth_token', token);
+      useAuthStore.getState().register(user, token);
+      navigate('/dashboard');
+      return;
+    }
+    setNotice('Account created. Please sign in.');
+    navigate('/login');
   };
 
   return (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,30 +21,39 @@ from backend.api.predictions import router as predictions_router
 from backend.api.signals import router as signals_router
 from backend.api.users import router as users_router
 from backend.api.wallets import router as wallets_router
-from backend.config import ALLOW_ALL_CORS, CORS_ORIGIN_REGEX, FRONTEND_URLS
 from backend.jobs.scheduler import start_scheduler
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title='Trading Intelligence Platform API')
 
-DEFAULT_ALLOWED_ORIGINS = [
-    "https://edgelabs-five.vercel.app",
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "http://localhost:5173",
+)
+
+allowed_origins = [
+    FRONTEND_URL,
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://localhost:4173",
 ]
-DEFAULT_ALLOWED_ORIGIN_REGEX = r"^https://[a-zA-Z0-9-]+\.vercel\.app$"
-
-allowed_origins = list(dict.fromkeys((FRONTEND_URLS or []) + DEFAULT_ALLOWED_ORIGINS))
-allowed_origin_regex = None if ALLOW_ALL_CORS else (CORS_ORIGIN_REGEX or DEFAULT_ALLOWED_ORIGIN_REGEX)
+allowed_origins = list(set(o for o in allowed_origins if o))
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=allowed_origin_regex,
     allow_credentials=True,
-    allow_methods=['*'],
-    allow_headers=['*'],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+    ],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 
@@ -137,6 +147,11 @@ def bootstrap_admin():
 
 @app.get('/health')
 def health() -> dict:
+    return {'status': 'ok', 'service': 'tradeintel-backend'}
+
+
+@app.get('/')
+def root() -> dict:
     return {'status': 'ok'}
 
 

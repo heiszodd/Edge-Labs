@@ -4,14 +4,19 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Copy backend code
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Install all Python dependencies used by backend/engine modules.
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application source required at runtime.
 COPY backend ./backend
+COPY engine ./engine
 
-# Install dependencies
-RUN pip install --no-cache-dir fastapi uvicorn[standard] python-dotenv supabase cryptography apscheduler httpx pydantic email-validator python-telegram-bot
-
-# Expose port for Fly
+# Expose default port (runtime still honors $PORT).
 EXPOSE 8080
 
-# Run the app
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Railway/Fly compatible startup command.
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
